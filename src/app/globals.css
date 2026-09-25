@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-imsg-blue: #1982fc;
+  --color-imsg-gray: #e9e9eb;
+  --color-imsg-text: #000000;
+  --color-ios-green: #34c759;
+  --color-ios-red: #ff3b30;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+:root {
+  --screen-bg: #ffffff;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #f2f2f7;
+  color: #111;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- iMessage bubble tails ---------- */
+.bubble {
+  position: relative;
+  max-width: 78%;
+  padding: 7px 12px;
+  border-radius: 18px;
+  font-size: 16px;
+  line-height: 1.3;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.bubble-out {
+  background: var(--color-imsg-blue);
+  color: #fff;
+  align-self: flex-end;
+}
+.bubble-in {
+  background: var(--color-imsg-gray);
+  color: #000;
+  align-self: flex-start;
+}
+.bubble-out.tail::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -7px;
+  width: 20px;
+  height: 22px;
+  background: var(--color-imsg-blue);
+  border-bottom-left-radius: 16px 14px;
+}
+.bubble-out.tail::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -26px;
+  width: 26px;
+  height: 22px;
+  background: var(--screen-bg);
+  border-bottom-left-radius: 10px;
+}
+.bubble-in.tail::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -7px;
+  width: 20px;
+  height: 22px;
+  background: var(--color-imsg-gray);
+  border-bottom-right-radius: 16px 14px;
+}
+.bubble-in.tail::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -26px;
+  width: 26px;
+  height: 22px;
+  background: var(--screen-bg);
+  border-bottom-right-radius: 10px;
+}
+
+/* typing dots */
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #8e8e93;
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* hide scrollbars inside the phone */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* incoming call pulse */
+@keyframes ring-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.ring-pulse::before,
+.ring-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  animation: ring-pulse 1.8s infinite ease-out;
+}
+.ring-pulse::after {
+  animation-delay: 0.9s;
+}
