@@ -2,9 +2,11 @@
 
 import { Copy, Reply } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
 import { TAPBACKS, type ChatMessage, type Tapback } from "@/lib/session/types";
 import { cn } from "@/lib/utils";
-import { TapbackGlyph } from "./Tapback";
+import { GLASS, TapbackGlyph } from "./Tapback";
+import { TAPBACK_LABEL } from "./tapbackTheme";
 
 export interface AnchorRect {
   top: number;
@@ -42,6 +44,14 @@ export function MessageActions({
 }) {
   const out = message.role === "user";
   const mine = message.reactions?.find((r) => r.by === "user")?.kind;
+  const [picked, setPicked] = useState<Tapback | null>(null);
+
+  // iOS: the chosen glyph pops, then the whole overlay settles back down.
+  const pick = (kind: Tapback) => {
+    if (picked) return;
+    setPicked(kind);
+    setTimeout(() => onTapback(kind), 140);
+  };
 
   // Vertical placement. Prefer: bar above, menu below.
   const roomAbove = anchor.top - HEADER_H;
@@ -70,16 +80,17 @@ export function MessageActions({
         className="absolute inset-0 bg-white/55 backdrop-blur-[14px]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        exit={{ opacity: 0, transition: { duration: 0.16, delay: 0.06 } }}
         transition={{ duration: 0.18 }}
       />
 
       {/* lifted bubble clone */}
       <motion.div
-        className={cn("bubble absolute shadow-[0_8px_30px_rgba(0,0,0,0.18)]", out ? "bubble-out" : "bubble-in", "tail")}
+        className={cn("bubble absolute", out ? "bubble-out" : "bubble-in", "tail")}
         style={{ top: bubbleTop, left: anchor.left, width: anchor.width, maxWidth: "none" }}
-        initial={{ top: anchor.top, scale: 1 }}
-        animate={{ top: bubbleTop, scale: 1.02 }}
+        initial={{ top: anchor.top, scale: 1, boxShadow: "0 0 0 rgba(0,0,0,0)" }}
+        animate={{ top: bubbleTop, scale: 1.02, boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}
+        exit={{ top: anchor.top, scale: 1, boxShadow: "0 0 0 rgba(0,0,0,0)", opacity: 0, transition: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] } }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -88,31 +99,33 @@ export function MessageActions({
 
       {/* tapback bar */}
       <motion.div
-        className="absolute flex h-[46px] items-center gap-[2px] rounded-full bg-[#e9e9eb] px-[7px] shadow-[0_6px_24px_rgba(0,0,0,0.18)]"
+        className={cn("absolute flex h-[46px] items-center gap-[2px] rounded-full px-[7px]", GLASS)}
         style={{ top: barTop, ...sideStyle }}
         initial={{ opacity: 0, scale: 0.6, y: 12, transformOrigin: out ? "right bottom" : "left bottom" }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.8 }}
+        exit={{ opacity: 0, scale: 0.7, y: 8, transition: { duration: 0.16 } }}
         transition={{ type: "spring", stiffness: 480, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
       >
         {TAPBACKS.map((kind, i) => {
           const selected = mine === kind;
+          const isPicked = picked === kind;
           return (
             <motion.button
               key={kind}
               initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.03 * i, type: "spring", stiffness: 500, damping: 22 }}
+              animate={{ scale: isPicked ? 1.35 : 1, opacity: 1, y: isPicked ? -6 : 0 }}
+              transition={isPicked ? { type: "spring", stiffness: 600, damping: 18 } : { delay: 0.03 * i, type: "spring", stiffness: 500, damping: 22 }}
               whileTap={{ scale: 0.85 }}
-              onClick={() => onTapback(kind)}
+              onClick={() => pick(kind)}
               aria-label={kind}
+              title={TAPBACK_LABEL[kind]}
               className={cn(
                 "flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors",
-                selected ? "bg-imsg-blue text-white" : "text-[#7d7d82] hover:bg-black/5",
+                selected && !isPicked ? "bg-black/[0.08]" : "hover:bg-black/5",
               )}
             >
-              <TapbackGlyph kind={kind} className="h-[19px] w-[19px]" />
+              <TapbackGlyph kind={kind} size={22} />
             </motion.button>
           );
         })}
@@ -120,11 +133,11 @@ export function MessageActions({
 
       {/* context menu */}
       <motion.div
-        className="absolute w-[250px] overflow-hidden rounded-[13px] bg-[#f2f2f7]/95 shadow-[0_10px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl"
+        className={cn("absolute w-[250px] overflow-hidden rounded-[14px]", GLASS)}
         style={{ top: menuTop, ...sideStyle }}
         initial={{ opacity: 0, scale: 0.7, transformOrigin: out ? "right top" : "left top" }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.85 }}
+        exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.14 } }}
         transition={{ type: "spring", stiffness: 480, damping: 30 }}
         onClick={(e) => e.stopPropagation()}
       >
