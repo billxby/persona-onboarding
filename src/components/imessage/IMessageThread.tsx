@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useMotionValue, useTransform } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { messageText, type ChatMessage, type ReactionKind } from "@/lib/session/types";
+import { USER_HELLO } from "@/lib/shared/text";
 import { cn, formatClock } from "@/lib/utils";
 import { AppClipCard } from "./AppClipCard";
 import { AppClipRunner } from "./AppClipRunner";
@@ -196,6 +197,7 @@ export function IMessageThread({
           }}
           replyTo={replyTarget}
           onCancelReply={() => setReplyToId(null)}
+          draft={messages.length === 0 ? USER_HELLO : undefined}
         />
       </div>
 

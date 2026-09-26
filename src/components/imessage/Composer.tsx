@@ -21,13 +21,23 @@ export function Composer({
   disabled,
   replyTo,
   onCancelReply,
+  draft,
 }: {
   onSend: (text: string) => void;
   disabled?: boolean;
   replyTo?: ReplyTarget | null;
   onCancelReply?: () => void;
+  /** Prefilled, unsent text (the "Hey Persona" an sms: link would put here while the thread is empty). */
+  draft?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft ?? "");
+  // A new draft replaces whatever is typed (e.g. the thread emptied on restart). Adjusted during
+  // render on prop change, the React way to derive state without an effect.
+  const [appliedDraft, setAppliedDraft] = useState(draft);
+  if (draft !== appliedDraft) {
+    setAppliedDraft(draft);
+    if (draft !== undefined) setText(draft);
+  }
   const ref = useRef<HTMLTextAreaElement>(null);
   const canSend = text.trim().length > 0 && !disabled;
 

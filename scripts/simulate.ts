@@ -19,6 +19,7 @@ import { hostilePersonas } from "@/lib/server/prompt";
 import { env } from "@/lib/server/env";
 import { fastModel } from "@/lib/server/providers";
 import { connectDemoInbox, createSession, HttpError, postMessage, runChat, sleep, waitForServer, type ChatRun } from "./lib/http";
+import { USER_HELLO } from "@/lib/shared/text";
 import type { ChatTrigger } from "@/lib/shared/types";
 import { formatMetrics, metricsFor } from "./metrics";
 
@@ -148,16 +149,13 @@ const sawGmailCard = (run: ChatRun) => run.messages.some((m) => m.kind === "link
 async function simulate(persona: Persona, base: string, turns: number, tag: boolean, autoGmail: boolean) {
   const sid = randomUUID();
   console.log(`\n=== ${persona.id} — ${persona.title} ===  session ${sid}`);
-  const view = await createSession(base, sid);
+  await createSession(base, sid);
   const thread: Line[] = [];
-  const opener = view.messages
-    .filter((m) => m.role === "assistant" && m.kind === "text" && m.content)
-    .map((m) => m.content as string)
-    .join("\n");
-  if (opener) {
-    console.log(`A: ${opener}`);
-    thread.push({ who: "bot", text: opener });
-  }
+  // The real flow: the compose field is prefilled with "Hey Persona"; sending it gets the opener.
+  await postMessage(base, sid, USER_HELLO);
+  console.log(`U: ${USER_HELLO}`);
+  thread.push({ who: "human", text: USER_HELLO });
+  await printRun(await chatWithRetry(base, sid), thread, tag, USER_HELLO);
 
   // --auto-gmail state: once per session
   let cardSeen = false; // the Gmail link card arrived (or gmail went pending)

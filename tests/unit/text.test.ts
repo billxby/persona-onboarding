@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectAddressedName,
   looksLikeCallRequest,
+  isHello,
   looksLikeSkip,
   questionsIn,
   sentencesOf,
@@ -102,6 +103,10 @@ describe("detectAddressedName", () => {
 });
 
 describe("intent helpers", () => {
+  it("isHello", () => {
+    for (const t of ["Hey Persona", "hey persona", "Hi Persona!", " hello, persona ", "yo persona"]) expect(isHello(t)).toBe(true);
+    for (const t of ["hey persona, cancel my gym", "Hey", "persona", "it's Bill", "hey persona can you call me"]) expect(isHello(t)).toBe(false);
+  });
   it("looksLikeSkip", () => {
     expect(looksLikeSkip("skip")).toBe(true);
     expect(looksLikeSkip("I'm good, skip everything")).toBe(true);

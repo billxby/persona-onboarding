@@ -1,6 +1,6 @@
 import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
 import type { Belief, ChatEvent, ChatTrigger, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
-import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, USER_HELLO } from "@/lib/shared/text";
+import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, isHello, OPENER_ASK, OPENER_INTRO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import { env } from "../env";
 import { markGmail } from "../gmail/oauth";
@@ -10,24 +10,33 @@ import { fastModel, textModel } from "../providers";
 import { acquireReplyLock, getSession, patchSession, releaseReplyLock } from "../session";
 import { bumpAttempt, isGraduated, nextBestAsk, pushQuestion } from "../state";
 import { TOOL_DEFS } from "../tools/definitions";
-import { runTool } from "../tools/run";
+import { insertAppClipCard, runTool } from "../tools/run";
 import { insertVoicemail } from "../voicemail";
 import { checkReply } from "./guard";
 
-/** DESIGN.md §7.1: the bot's fixed reply to your "Hey Persona". Inserted by the server so the first paint already has it. */
-export const OPENER = "Hey, I'm your Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live.";
-
 /**
- * Seed a thread's opening: your prefilled "Hey Persona" on an empty thread, then the opener
- * when no assistant message exists yet. Deterministic, no model call, idempotent. The hello
- * row carries `payload.seeded` so analytics can tell it from a typed turn.
+ * The first text on a fresh thread is normally the prefilled "Hey Persona" (DESIGN §7.1): the
+ * server answers it with the fixed opener, no model call: the intro line, the Meet your Persona
+ * App Clip card, then the ask, with typing pauses. Any other first text goes to the model, which
+ * introduces itself. Returns whether this handled the turn.
  */
-export async function seedOpening(session_id: string): Promise<MessageRow[]> {
+async function landOpenerIfHello(session_id: string, emit: Emit): Promise<boolean> {
   const thread = await listMessages(session_id, { channel: "text" });
-  const rows: MessageRow[] = [];
-  if (thread.length === 0) rows.push(await insertMessage({ session_id, role: "user", kind: "text", content: USER_HELLO, channel: "text", payload: { seeded: true } }));
-  if (!thread.some((m) => m.role === "assistant")) rows.push(await insertMessage({ session_id, role: "assistant", kind: "text", content: OPENER, channel: "text" }));
-  return rows;
+  if (thread.some((m) => m.role === "assistant")) return false;
+  const last = [...thread].reverse().find((m) => m.role === "user" && m.kind === "text");
+  if (!last?.content || !isHello(last.content)) return false;
+  const land = async (content: string) => {
+    await sleep(typingDelayMs(content));
+    emit({ type: "message", message: await insertMessage({ session_id, role: "assistant", kind: "text", content, channel: "text" }) });
+  };
+  emit({ type: "typing", on: true });
+  await land(OPENER_INTRO);
+  await sleep(600);
+  emit({ type: "message", message: await insertAppClipCard(session_id, "opener") });
+  await land(OPENER_ASK);
+  emit({ type: "typing", on: false });
+  await insertEvent(session_id, "opener", { via: "hello" });
+  return true;
 }
 
 export type Emit = (e: ChatEvent) => void;
@@ -178,8 +187,8 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
     };
 
     // Deterministic triggers: no model call.
+    // "open": nothing to seed. The thread starts empty; the browser prefills the compose field instead.
     if (trigger === "open") {
-      for (const row of await seedOpening(session_id)) emit({ type: "message", message: row });
       await finish();
       return;
     }
@@ -211,6 +220,10 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
       session = (await getSession(session_id)) ?? session;
     }
 
+    if (trigger === "user" && (await landOpenerIfHello(session_id, emit))) {
+      await finish();
+      return;
+    }
     await llmTurn(session, trigger, reason, emit);
     await finish();
   } catch (e) {

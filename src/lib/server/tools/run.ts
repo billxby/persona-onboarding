@@ -421,14 +421,11 @@ const endCall: Handler = async (ctx, input, effects) => {
   return { session, ok: true, note: "call is ending; the chat continues" };
 };
 
-/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session, both channels. */
-const sendAppClip: Handler = async (ctx, input, effects) => {
-  const session = ctx.session;
-  const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
-  if (already) return { session, ok: false, error: "already sent; the card is in the chat, point them to it" };
-  const url = clipUrl(env.APP_URL, session.id);
+/** Insert the "Meet your Persona" App Clip link card into the thread and log that it was shown. */
+export async function insertAppClipCard(session_id: string, via: "tool" | "opener", extra: Record<string, unknown> = {}): Promise<MessageRow> {
+  const url = clipUrl(env.APP_URL, session_id);
   const card = await insertMessage({
-    session_id: session.id,
+    session_id,
     role: "assistant",
     kind: "link_card",
     channel: "text",
@@ -442,8 +439,16 @@ const sendAppClip: Handler = async (ctx, input, effects) => {
       app_clip: { ...APP_CLIP_CARD },
     },
   });
-  effects.messages.push(card);
-  await insertEvent(session.id, "app_clip_card_shown", { via: "tool", channel: ctx.channel, reason: short(String(input.reason ?? ""), 120) });
+  await insertEvent(session_id, "app_clip_card_shown", { via, ...extra });
+  return card;
+}
+
+/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session from the model, both channels. The opener sends it too. */
+const sendAppClip: Handler = async (ctx, input, effects) => {
+  const session = ctx.session;
+  const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
+  if (already) return { session, ok: false, error: "already sent; the card is in the chat, point them to it" };
+  effects.messages.push(await insertAppClipCard(session.id, "tool", { channel: ctx.channel, reason: short(String(input.reason ?? ""), 120) }));
   return { session, ok: true, data: { sent: true }, note: "card is in the chat; tell them to tap it" };
 };
 
