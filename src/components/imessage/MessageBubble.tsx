@@ -44,14 +44,14 @@ export function MessageBubble({
     if (c.kind === "call") {
       // iOS puts call events inline in the thread as a quiet centred row
       return (
-        <div className="my-1.5 flex items-center justify-center gap-1.5 text-[11px] text-black/45" data-call-log={c.call.reason}>
+        <div className="my-1.5 flex items-center justify-center gap-1.5 text-[11px] text-screen-ink/45" data-call-log={c.call.reason}>
           <Phone className="h-3 w-3" strokeWidth={2.5} />
           <span>{callLogLabel(c.call)}</span>
-          <span className="text-black/30">· {formatClock(new Date(message.ts))}</span>
+          <span className="text-screen-ink/30">· {formatClock(new Date(message.ts))}</span>
         </div>
       );
     }
-    return <div className="my-1 self-center text-center text-[11px] text-black/45">{messageText(message)}</div>;
+    return <div className="my-1 self-center text-center text-[11px] text-screen-ink/45">{messageText(message)}</div>;
   }
 
   return (
@@ -65,7 +65,7 @@ export function MessageBubble({
       {/* drag-to-reveal timestamp */}
       <motion.span
         style={{ opacity: timeOpacity }}
-        className="pointer-events-none absolute -right-[60px] top-1/2 w-[54px] -translate-y-1/2 text-right text-[11px] tabular-nums text-black/45"
+        className="pointer-events-none absolute -right-[60px] top-1/2 w-[54px] -translate-y-1/2 text-right text-[11px] tabular-nums text-screen-ink/45"
       >
         {formatClock(new Date(message.ts))}
       </motion.span>
@@ -132,15 +132,15 @@ function ContactBubble({ contact, out }: { contact: ContactCard; out: boolean })
     .map((w) => w[0]?.toUpperCase())
     .join("");
   return (
-    <div className={cn("flex w-[262px] items-center gap-3 rounded-[18px] px-3 py-2.5", out ? "bg-imsg-blue text-white" : "bg-imsg-gray text-black")} data-contact={contact.name}>
+    <div className={cn("flex w-[262px] items-center gap-3 rounded-[18px] px-3 py-2.5", out ? "bg-imsg-blue text-white" : "bg-imsg-gray text-screen-ink")} data-contact={contact.name}>
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#a2a2a8] to-[#6e6e73] text-[16px] font-semibold text-white">
         {initials || "P"}
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[16px] font-semibold leading-tight">{contact.name}</div>
-        <div className={cn("truncate text-[13px]", out ? "text-white/75" : "text-black/55")}>{contact.org ?? contact.note ?? "Contact"}</div>
+        <div className={cn("truncate text-[13px]", out ? "text-white/75" : "text-screen-ink/55")}>{contact.org ?? contact.note ?? "Contact"}</div>
       </div>
-      <ChevronRight className={cn("h-4 w-4 shrink-0", out ? "text-white/60" : "text-black/35")} />
+      <ChevronRight className={cn("h-4 w-4 shrink-0", out ? "text-white/60" : "text-screen-ink/35")} />
     </div>
   );
 }
@@ -208,16 +208,16 @@ function AudioBubble({ id, audio, out, tail }: { id: string; audio: AudioMessage
           {bars.map((h, i) => (
             <span
               key={i}
-              className={cn("w-[2.5px] rounded-full", out ? "bg-white" : "bg-black/70", i / bars.length > progress && "opacity-45")}
+              className={cn("w-[2.5px] rounded-full", out ? "bg-white" : "bg-screen-ink/70", i / bars.length > progress && "opacity-45")}
               style={{ height: `${Math.round(h * 100)}%` }}
             />
           ))}
         </div>
-        <span className={cn("text-[13px] tabular-nums", out ? "text-white/85" : "text-black/60")}>{formatDuration(durationMs)}</span>
+        <span className={cn("text-[13px] tabular-nums", out ? "text-white/85" : "text-screen-ink/60")}>{formatDuration(durationMs)}</span>
       </div>
       {audio.transcript && (
-        <div className={cn("mt-1 max-w-[280px] px-1 text-[13px] leading-snug text-black/55", out ? "text-right" : "text-left")}>
-          <span className="mr-1 text-[10px] uppercase tracking-wide text-black/35">Transcription</span>
+        <div className={cn("mt-1 max-w-[280px] px-1 text-[13px] leading-snug text-screen-ink/55", out ? "text-right" : "text-left")}>
+          <span className="mr-1 text-[10px] uppercase tracking-wide text-screen-ink/35">Transcription</span>
           {audio.transcript}
         </div>
       )}
@@ -276,7 +276,7 @@ function ReplyQuote({ quoted, out }: { quoted: ChatMessage; out: boolean }) {
       </div>
       <div
         className={cn(
-          "h-[16px] border-black/20",
+          "h-[16px] border-screen-ink/20",
           sameSide
             ? out
               ? "mr-4 w-[12px] self-end rounded-br-[10px] border-b-[1.5px] border-r-[1.5px]"

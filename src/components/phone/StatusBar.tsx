@@ -4,7 +4,7 @@ import { Battery, Signal, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn, formatClock } from "@/lib/utils";
 
-export function StatusBar({ dark = false, className }: { dark?: boolean; className?: string }) {
+export function StatusBar({ className }: { className?: string }) {
   const [time, setTime] = useState<string>("");
   useEffect(() => {
     const tick = () => setTime(formatClock(new Date()));
@@ -19,8 +19,7 @@ export function StatusBar({ dark = false, className }: { dark?: boolean; classNa
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-0 top-0 z-30 flex h-[54px] items-end justify-between px-8 pb-2 text-[15px] font-semibold",
-        dark ? "text-white" : "text-black",
+        "pointer-events-none absolute inset-x-0 top-0 z-30 flex h-[54px] items-end justify-between px-8 pb-2 text-[15px] font-semibold text-screen-ink",
         className,
       )}
     >

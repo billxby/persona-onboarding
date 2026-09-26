@@ -10,8 +10,14 @@
   --color-line: var(--line);
   --color-ink: var(--ink);
   --color-imsg-blue: #1982fc;
-  --color-imsg-gray: #e9e9eb;
+  --color-imsg-gray: var(--imsg-gray);
   --color-imsg-text: #000000;
+  /* phone screen tokens: iOS light on :root, iOS dark under [data-theme="dark"] */
+  --color-screen: var(--screen-bg);
+  --color-screen-ink: var(--screen-ink);
+  --color-sheet: var(--sheet);
+  --color-glass: var(--glass);
+  --color-glass-edge: var(--glass-edge);
   --color-ios-green: #34c759;
   --color-ios-red: #ff3b30;
   --font-sans:
@@ -20,6 +26,12 @@
 
 :root {
   --screen-bg: #ffffff;
+  --screen-ink: #000000;
+  --imsg-gray: #e9e9eb;
+  --sheet: #ffffff;
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-hi: rgba(255, 255, 255, 0.95);
   --stage: #ececf1;
   --stage-hi: #ffffff;
   --stage-lo: #dcdce3;
@@ -28,6 +40,13 @@
   --ink: #111111;
 }
 [data-theme="dark"] {
+  --screen-bg: #000000;
+  --screen-ink: #ffffff;
+  --imsg-gray: #26262a;
+  --sheet: #1c1c1e;
+  --glass: rgba(44, 44, 46, 0.82);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-hi: rgba(255, 255, 255, 0.1);
   --stage: #17171a;
   --stage-hi: #26262b;
   --stage-lo: #0c0c0e;
@@ -72,8 +91,8 @@ body {
   align-self: flex-end;
 }
 .bubble-in {
-  background: var(--color-imsg-gray);
-  color: #000;
+  background: var(--imsg-gray);
+  color: var(--screen-ink);
   align-self: flex-start;
 }
 .bubble-out.tail::before {
@@ -103,7 +122,7 @@ body {
   left: -7px;
   width: 20px;
   height: 22px;
-  background: var(--color-imsg-gray);
+  background: var(--imsg-gray);
   border-bottom-right-radius: 16px 14px;
 }
 .bubble-in.tail::after {

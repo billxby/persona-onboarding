@@ -35,7 +35,7 @@ export function LinkBubble({
           <PersonaAvatar size={38} className="rounded-[10px]" />
           <div className="min-w-0 flex-1">
             <div className="line-clamp-2 text-[14px] font-semibold leading-[17px]">{clip.title}</div>
-            <div className="truncate text-[12px] leading-tight text-black/55">{clip.subtitle}</div>
+            <div className="truncate text-[12px] leading-tight text-screen-ink/55">{clip.subtitle}</div>
           </div>
           <button
             onClick={onOpenAppClip}
@@ -53,13 +53,13 @@ export function LinkBubble({
       {link.imageUrl || link.appClip ? <PreviewImage link={link} /> : null}
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         {!link.imageUrl && !link.appClip && (
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/[0.06] text-black/50">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-screen-ink/[0.06] text-screen-ink/50">
             <Link2 className="h-4 w-4" />
           </span>
         )}
         <div className="min-w-0">
           {link.title && <div className="line-clamp-2 text-[15px] font-semibold leading-tight">{link.title}</div>}
-          <div className="truncate text-[13px] leading-tight text-black/55">{link.domain}</div>
+          <div className="truncate text-[13px] leading-tight text-screen-ink/55">{link.domain}</div>
         </div>
       </div>
     </button>
@@ -73,12 +73,12 @@ function PreviewImage({ link, tall }: { link: LinkPreview; tall?: boolean }) {
     return <img src={link.imageUrl} alt="" className={cn("w-full object-cover", tall ? "h-[150px]" : "h-[130px]")} />;
   }
   return (
-    <div className={cn("flex w-full items-center justify-center bg-gradient-to-br from-[#e6e6ec] via-[#f3f3f7] to-[#d9d9e0]", tall ? "h-[150px]" : "h-[130px]")}>
-      <div className="flex items-center gap-3 text-black/60">
+    <div className={cn("flex w-full items-center justify-center bg-gradient-to-br from-[#e6e6ec] via-[#f3f3f7] to-[#d9d9e0] dark:from-[#2c2c2e] dark:via-[#3a3a3c] dark:to-[#1c1c1e]", tall ? "h-[150px]" : "h-[130px]")}>
+      <div className="flex items-center gap-3 text-screen-ink/60">
         <PersonaAvatar size={44} />
         {link.appClip && (
           <>
-            <span className="text-[20px] text-black/30">+</span>
+            <span className="text-[20px] text-screen-ink/30">+</span>
             <span className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-white shadow-sm">
               <Mail className="h-5 w-5 text-[#ea4335]" />
             </span>

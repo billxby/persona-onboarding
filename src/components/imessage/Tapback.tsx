@@ -66,7 +66,7 @@ export function ReactionGlyph({ kind, size = 16 }: { kind: ReactionKind; size?: 
 
 /** Frosted material shared by badges, picker and menu. */
 export const GLASS =
-  "bg-white/78 backdrop-blur-xl border border-white/90 shadow-[0_1px_1.5px_rgba(0,0,0,0.10),0_6px_18px_-8px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.95)]";
+  "bg-glass backdrop-blur-xl border border-glass-edge shadow-[0_1px_1.5px_rgba(0,0,0,0.10),0_6px_18px_-8px_rgba(0,0,0,0.18),inset_0_1px_0_var(--glass-hi)]";
 
 /**
  * Tapback badges pinned to a bubble corner: top-right on received bubbles,
@@ -92,7 +92,7 @@ export function TapbackBadges({ reactions, side }: { reactions: Reaction[]; side
               <ReactionGlyph kind={r.kind} size={16} />
             </div>
             <span className={cn("absolute h-[9px] w-[9px] rounded-full", GLASS, side === "in" ? "bottom-[-2px] left-[-1px]" : "bottom-[-2px] right-[-1px]")} />
-            <span className={cn("absolute h-[5px] w-[5px] rounded-full bg-white/85 shadow-[0_0.5px_1px_rgba(0,0,0,0.12)]", side === "in" ? "bottom-[-6px] left-[-5px]" : "bottom-[-6px] right-[-5px]")} />
+            <span className={cn("absolute h-[5px] w-[5px] rounded-full bg-white/85 shadow-[0_0.5px_1px_rgba(0,0,0,0.12)] dark:bg-[#3a3a3c]", side === "in" ? "bottom-[-6px] left-[-5px]" : "bottom-[-6px] right-[-5px]")} />
           </motion.div>
         ))}
       </AnimatePresence>

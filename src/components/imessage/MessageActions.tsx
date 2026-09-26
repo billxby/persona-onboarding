@@ -75,7 +75,7 @@ export function MessageActions({
   return (
     <div className="absolute inset-0 z-[60]" onClick={onClose}>
       <motion.div
-        className="absolute inset-0 bg-white/55 backdrop-blur-[14px]"
+        className="absolute inset-0 bg-screen/55 backdrop-blur-[14px]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0, transition: { duration: 0.16, delay: 0.06 } }}
@@ -92,7 +92,7 @@ export function MessageActions({
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {isText ? messageText(message) : <span className="block px-3 py-2 text-[13px] text-black/55">{messageText(message)}</span>}
+        {isText ? messageText(message) : <span className="block px-3 py-2 text-[13px] text-screen-ink/55">{messageText(message)}</span>}
       </motion.div>
 
       {/* tapback bar */}
@@ -120,7 +120,7 @@ export function MessageActions({
                   onClick={() => pick(kind)}
                   aria-label={tapback}
                   title={TAPBACK_LABEL[tapback]}
-                  className={cn("flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors", selected && !isPicked ? "bg-black/[0.08]" : "hover:bg-black/5")}
+                  className={cn("flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors", selected && !isPicked ? "bg-screen-ink/[0.08]" : "hover:bg-screen-ink/5")}
                 >
                   <TapbackGlyph kind={tapback} size={22} />
                 </motion.button>
@@ -139,17 +139,17 @@ export function MessageActions({
                   whileTap={{ scale: 0.85 }}
                   onClick={() => pick(kind)}
                   aria-label={`emoji ${emoji}`}
-                  className={cn("flex h-[36px] w-[34px] items-center justify-center rounded-full", selected && !isPicked ? "bg-black/[0.08]" : "hover:bg-black/5")}
+                  className={cn("flex h-[36px] w-[34px] items-center justify-center rounded-full", selected && !isPicked ? "bg-screen-ink/[0.08]" : "hover:bg-screen-ink/5")}
                 >
                   <ReactionGlyph kind={kind} size={22} />
                 </motion.button>
               );
             })}
-        <span className="mx-[3px] h-[22px] w-px bg-black/10" />
+        <span className="mx-[3px] h-[22px] w-px bg-screen-ink/10" />
         <button
           onClick={() => setEmojiMode((m) => !m)}
           aria-label={emojiMode ? "Classic tapbacks" : "More emoji"}
-          className={cn("flex h-[36px] w-[36px] items-center justify-center rounded-full text-black/45 hover:bg-black/5", emojiMode && "bg-black/[0.08]")}
+          className={cn("flex h-[36px] w-[36px] items-center justify-center rounded-full text-screen-ink/45 hover:bg-screen-ink/5", emojiMode && "bg-screen-ink/[0.08]")}
         >
           <SmilePlus className="h-[21px] w-[21px]" strokeWidth={1.8} />
         </button>
@@ -166,7 +166,7 @@ export function MessageActions({
         onClick={(e) => e.stopPropagation()}
       >
         <MenuItem label="Reply" icon={Reply} onClick={onReply} />
-        <div className="h-px bg-black/10" />
+        <div className="h-px bg-screen-ink/10" />
         <MenuItem label="Copy" icon={Copy} onClick={onCopy} />
       </motion.div>
     </div>
@@ -175,9 +175,9 @@ export function MessageActions({
 
 function MenuItem({ label, icon: Icon, onClick }: { label: string; icon: React.ComponentType<{ className?: string }>; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex h-[44px] w-full items-center justify-between px-4 text-[17px] active:bg-black/5">
+    <button onClick={onClick} className="flex h-[44px] w-full items-center justify-between px-4 text-[17px] active:bg-screen-ink/5">
       <span>{label}</span>
-      <Icon className="h-[19px] w-[19px] text-black/80" />
+      <Icon className="h-[19px] w-[19px] text-screen-ink/80" />
     </button>
   );
 }

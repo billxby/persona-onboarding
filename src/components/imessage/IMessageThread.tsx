@@ -62,6 +62,26 @@ export function IMessageThread({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length, typing, replyToId]);
 
+  // Keep the thread pinned to its end when the scroll area shrinks (the composer growing
+  // with multi-line text, the reply card appearing) unless the reader has scrolled up.
+  const atBottom = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+    };
+    const ro = new ResizeObserver(() => {
+      if (atBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, []);
+
   const byId = useMemo(() => new Map(messages.filter((m) => !!m.content).map((m) => [m.id, m])), [messages]);
   const lastOutgoing = [...messages].reverse().find((m) => m.role === "user");
   const activeMessage = actions ? byId.get(actions.id) : undefined;
@@ -111,68 +131,73 @@ export function IMessageThread({
   }, [replyToId, byId, contactName]);
 
   return (
-    <div ref={rootRef} className="relative h-full w-full select-none bg-white">
+    <div ref={rootRef} className="relative h-full w-full select-none bg-screen">
       <ThreadHeader name={contactName} />
 
-      <div ref={scrollRef} className={cn("no-scrollbar absolute inset-x-0 top-[100px] overflow-x-hidden overflow-y-auto", replyTarget ? "bottom-[136px]" : "bottom-[84px]")}>
-        <motion.div
-          drag="x"
-          dragDirectionLock
-          dragConstraints={{ left: -REVEAL_PX, right: 0 }}
-          dragElastic={0.04}
-          dragMomentum={false}
-          dragSnapToOrigin
-          style={{ x }}
-          className="flex min-h-full flex-col justify-end gap-[3px] px-4 pb-2 pt-6"
-        >
-          <AnimatePresence initial={false}>
-            {messages.map((m, i) => {
-              const prev = messages[i - 1];
-              const next = messages[i + 1];
-              const tail = !next || next.role !== m.role || next.ts - m.ts > HOUR;
-              const gapBefore = prev && prev.role !== m.role;
-              const separator = !prev || m.ts - prev.ts > HOUR;
-              return (
-                <div key={m.id} className={cn(gapBefore && !separator && "mt-2")}>
-                  {separator && <div className={cn("mb-2 text-center text-[11px] text-black/45", prev && "mt-4")}>{formatSeparator(m.ts)}</div>}
-                  <MessageBubble
-                    message={m}
-                    replyTo={m.replyToId ? byId.get(m.replyToId) : undefined}
-                    tail={tail}
-                    timeOpacity={timeOpacity}
-                    senderInContacts={senderInContacts}
-                    onOpenActions={openActions}
-                    onOpenLink={openLink}
-                    onOpenAppClip={setAppClipFor}
-                  />
-                  {m.role === "user" && m.status === "failed" && (
-                    <div className="mt-0.5 text-right text-[11px] font-medium text-ios-red">Not Delivered</div>
-                  )}
-                  {m.id === lastOutgoing?.id && m.status && m.status !== "failed" && (
-                    <div className="mt-0.5 text-right text-[11px] text-black/45">
-                      {m.status === "read" ? `Read ${m.readAt ? formatClock(new Date(m.readAt)) : ""}`.trim() : m.status === "delivered" ? "Delivered" : ""}
-                    </div>
-                  )}
+      {/* Thread and composer share the space under the header. The composer is in flow, so
+          the thread shrinks as the field grows (multi-line text, reply card) instead of
+          being covered by it. */}
+      <div className="absolute inset-x-0 top-[100px] bottom-0 flex flex-col">
+        <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <motion.div
+            drag="x"
+            dragDirectionLock
+            dragConstraints={{ left: -REVEAL_PX, right: 0 }}
+            dragElastic={0.04}
+            dragMomentum={false}
+            dragSnapToOrigin
+            style={{ x }}
+            className="flex min-h-full flex-col justify-end gap-[3px] px-4 pb-2 pt-6"
+          >
+            <AnimatePresence initial={false}>
+              {messages.map((m, i) => {
+                const prev = messages[i - 1];
+                const next = messages[i + 1];
+                const tail = !next || next.role !== m.role || next.ts - m.ts > HOUR;
+                const gapBefore = prev && prev.role !== m.role;
+                const separator = !prev || m.ts - prev.ts > HOUR;
+                return (
+                  <div key={m.id} className={cn(gapBefore && !separator && "mt-2")}>
+                    {separator && <div className={cn("mb-2 text-center text-[11px] text-screen-ink/45", prev && "mt-4")}>{formatSeparator(m.ts)}</div>}
+                    <MessageBubble
+                      message={m}
+                      replyTo={m.replyToId ? byId.get(m.replyToId) : undefined}
+                      tail={tail}
+                      timeOpacity={timeOpacity}
+                      senderInContacts={senderInContacts}
+                      onOpenActions={openActions}
+                      onOpenLink={openLink}
+                      onOpenAppClip={setAppClipFor}
+                    />
+                    {m.role === "user" && m.status === "failed" && (
+                      <div className="mt-0.5 text-right text-[11px] font-medium text-ios-red">Not Delivered</div>
+                    )}
+                    {m.id === lastOutgoing?.id && m.status && m.status !== "failed" && (
+                      <div className="mt-0.5 text-right text-[11px] text-screen-ink/45">
+                        {m.status === "read" ? `Read ${m.readAt ? formatClock(new Date(m.readAt)) : ""}`.trim() : m.status === "delivered" ? "Delivered" : ""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {typing && (
+                <div key="typing" className="mt-2 flex">
+                  <TypingIndicator />
                 </div>
-              );
-            })}
-            {typing && (
-              <div key="typing" className="mt-2 flex">
-                <TypingIndicator />
-              </div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
 
-      <Composer
-        onSend={(text) => {
-          onSend(text, replyToId ?? undefined);
-          setReplyToId(null);
-        }}
-        replyTo={replyTarget}
-        onCancelReply={() => setReplyToId(null)}
-      />
+        <Composer
+          onSend={(text) => {
+            onSend(text, replyToId ?? undefined);
+            setReplyToId(null);
+          }}
+          replyTo={replyTarget}
+          onCancelReply={() => setReplyToId(null)}
+        />
+      </div>
 
       <AnimatePresence>
         {actions && activeMessage && (
