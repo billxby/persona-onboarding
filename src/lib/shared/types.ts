@@ -46,6 +46,8 @@ export interface SessionRow {
   graduated_at: string | null;
   last_user_activity_at: string | null;
   oauth_state: string | null;
+  /** assistant turns so far (text bubbles bursts + final call utterances); drives turn-based backoff */
+  turn: number;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +141,8 @@ export type EventType =
   | "app_clip_cta"
   | "app_clip_fallback_web"
   | "app_clip_demo"
+  | "intention"
+  | "receptivity"
   | "error";
 
 export interface EventRow {
@@ -175,6 +179,78 @@ export interface Belief {
   object: string;
   confidence: number;
   status: BeliefStatus;
+  reason: string | null;
+  evidence_ids: number[];
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Intentions: what is on the agent's own mind (DESIGN.md §13b)
+// ---------------------------------------------------------------------------
+
+/** open: start tracking · nudge: I brought it up · outcome: how they took it (0–10) · defer: snooze · done/drop: terminal · reopen */
+export type IntentionOp = "open" | "nudge" | "outcome" | "defer" | "done" | "drop" | "reopen";
+export type IntentionActor = "agent" | "system" | "user";
+export type IntentionStatus = "open" | "asked" | "done" | "dropped";
+export type ReceptivitySignal = "accepted" | "deferred" | "declined" | "shut_down" | "ignored" | "unclear";
+
+export interface IntentionEvent {
+  id: number;
+  session_id: string;
+  ts: string;
+  key: string;
+  op: IntentionOp;
+  actor: IntentionActor;
+  /** assistant turn counter at the time of the event (null when unknown) */
+  turn: number | null;
+  payload: IntentionPayload;
+  evidence_ref: string | null;
+}
+
+/** Per-op payload; every field optional so the fold can ignore malformed rows. */
+export interface IntentionPayload {
+  // open / reopen
+  goal?: string;
+  slot?: SlotName | null;
+  sticky?: boolean;
+  priority?: number;
+  channels?: ServerChannel[];
+  // nudge
+  approach?: string;
+  channel?: ServerChannel;
+  // outcome
+  receptivity?: number;
+  signal?: ReceptivitySignal;
+  note?: string;
+  // defer
+  turns?: number;
+  ms?: number;
+  // done / drop / defer / reopen
+  reason?: string;
+}
+
+/** Projection row (= fold of intention_events); one per (session, key). */
+export interface Intention {
+  session_id: string;
+  key: string;
+  goal: string;
+  slot: SlotName | null;
+  sticky: boolean;
+  priority: number;
+  channels: ServerChannel[];
+  status: IntentionStatus;
+  nudges: number;
+  last_nudge_turn: number | null;
+  last_nudge_at: string | null;
+  last_approach: string | null;
+  approaches: string[];
+  receptivity: number | null;
+  receptivity_history: number[];
+  receptivity_mean: number | null;
+  last_outcome_turn: number | null;
+  notes: string[];
+  next_eligible_turn: number;
+  next_eligible_at: string;
   reason: string | null;
   evidence_ids: number[];
   updated_at: string;
@@ -242,6 +318,8 @@ export interface SessionView {
   session: SessionRow;
   messages: MessageRow[];
   beliefs: Belief[];
+  /** what is on the agent's mind (intentions projection) */
+  intentions: Intention[];
   next_best_ask: NextBestAsk;
   latency: LatencyStats;
   /** true when owner_uid is set, so the browser can subscribe via Realtime + RLS */
@@ -295,6 +373,7 @@ export type ChatEvent =
   | { type: "message"; message: MessageRow }
   | { type: "session"; session: SessionRow }
   | { type: "beliefs"; beliefs: Belief[] }
+  | { type: "mind"; intentions: Intention[] }
   | { type: "tool"; name: string; ok: boolean; ring?: boolean; next_best_ask: NextBestAsk }
   | { type: "done"; latency_ms: number; next_best_ask: NextBestAsk }
   | { type: "busy" }

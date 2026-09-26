@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { mindFor } from "@/lib/memory/mind";
 import { activeBeliefsFor } from "@/lib/memory/store";
 import { buildPrompt } from "@/lib/server/prompt";
 import { getSession, isUuid } from "@/lib/server/session";
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ name: stri
   const run = await runTool({ session, channel: "call" }, name, body.input ?? {});
   const res: ToolRouteResponse = { result: compactForVoice(run.result) };
   if (run.effects.instructions_changed) {
-    res.instructions = await buildPrompt(run.session, "call", await activeBeliefsFor(session.id));
+    const [beliefs, mind] = await Promise.all([activeBeliefsFor(session.id), mindFor(session.id).catch(() => undefined)]);
+    res.instructions = buildPrompt(run.session, "call", beliefs, mind);
   }
   if (run.effects.end_call) res.end_call = true;
   if (run.effects.ring) res.ring = true;

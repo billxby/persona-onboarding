@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { slotsFromSession, type Belief, type LatencyStats, type NextBestAsk, type SessionRow } from "@/lib/shared/types";
+import { slotsFromSession, type Belief, type Intention, type LatencyStats, type NextBestAsk, type SessionRow } from "@/lib/shared/types";
 import { uid } from "@/lib/utils";
 import {
   emptySlots,
@@ -56,6 +56,10 @@ export interface SessionState {
 
   // ----- server mirror (brain view) -----
   beliefs: Belief[];
+  /** what is on the agent's mind (intentions projection) */
+  intentions: Intention[];
+  /** server-side assistant turn counter (drives intention backoff) */
+  turn: number;
   nextBestAsk: NextBestAsk | null;
   latency: LatencyStats | null;
   connection: ConnectionMode;
@@ -81,7 +85,7 @@ export interface SessionState {
   setChannel: (channel: Channel) => void;
   /** Mirror the server session row into slots / phase / mode / channel. */
   applyServerSession: (row: SessionRow) => void;
-  setBrainView: (patch: Partial<Pick<SessionState, "beliefs" | "nextBestAsk" | "latency" | "promptVersion">>) => void;
+  setBrainView: (patch: Partial<Pick<SessionState, "beliefs" | "intentions" | "nextBestAsk" | "latency" | "promptVersion">>) => void;
   setConnection: (mode: ConnectionMode) => void;
   setLastServerMessageId: (id: number) => void;
 
@@ -118,6 +122,8 @@ const freshSession = () => ({
   screen: "messages" as Screen,
   senderInContacts: false,
   beliefs: [] as Belief[],
+  intentions: [] as Intention[],
+  turn: 0,
   nextBestAsk: null as NextBestAsk | null,
   latency: null as LatencyStats | null,
   connection: "offline" as ConnectionMode,
@@ -269,6 +275,7 @@ export const useSessionStore = create<SessionState>()(
         const confirmed = !!row.confirmed?.user_name;
         if (s.userNameConfirmed !== confirmed) patch.userNameConfirmed = confirmed;
         if (s.promptVersion !== (row.prompt_version ?? null)) patch.promptVersion = row.prompt_version ?? null;
+        if (s.turn !== (row.turn ?? 0)) patch.turn = row.turn ?? 0;
         // the browser owns the live WebRTC call; only follow the server when no local call is in flight
         const localCallBusy = s.call.state === "ringing" || s.call.state === "connecting" || s.call.state === "live";
         if (!localCallBusy) {
@@ -352,6 +359,7 @@ export const useSessionStore = create<SessionState>()(
           events: Array.isArray(p.events) ? p.events : [],
           call: p.call && typeof p.call === "object" ? { ...initialCall(), ...p.call } : initialCall(),
           beliefs: [],
+          intentions: [],
         };
       },
     },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { BUILTIN_INTENTIONS, replayMind, seedPayload } from "@/lib/memory/intentions";
 import { isRepeatQuestion, nextBestAsk, pushQuestion, stateBlock } from "@/lib/server/state";
-import type { SessionRow } from "@/lib/shared/types";
+import type { IntentionEvent, SessionRow } from "@/lib/shared/types";
 
 const base = (patch: Partial<SessionRow> = {}): SessionRow => ({
   id: "00000000-0000-4000-8000-000000000001",
@@ -27,6 +28,7 @@ const base = (patch: Partial<SessionRow> = {}): SessionRow => ({
   graduated_at: null,
   last_user_activity_at: null,
   oauth_state: null,
+  turn: 0,
   created_at: "2026-09-26T00:00:00Z",
   updated_at: "2026-09-26T00:00:00Z",
   ...patch,
@@ -77,6 +79,54 @@ describe("nextBestAsk (main mode)", () => {
     expect(nextBestAsk(s, "text").slot).toBe("agent_name");
     expect(nextBestAsk(s, "call").slot).toBeNull();
     expect(nextBestAsk({ ...s, attempts: { agent_name: 1 } }, "text").slot).toBeNull();
+  });
+});
+
+describe("nextBestAsk with the mind (intentions)", () => {
+  const NOW = Date.parse("2026-09-26T12:00:00Z");
+  const seeded = () => BUILTIN_INTENTIONS.map((b, i) => ({ id: i + 1, session_id: "s", ts: "2026-09-26T11:00:00Z", key: b.key, op: "open" as const, actor: "system" as const, turn: 0, payload: seedPayload(b), evidence_ref: null }));
+  const mindWith = (extra: Omit<IntentionEvent, "session_id" | "ts" | "evidence_ref">[]) => [...replayMind([...seeded(), ...extra.map((e) => ({ ...e, session_id: "s", ts: "2026-09-26T11:30:00Z", evidence_ref: null }))]).values()];
+
+  it("skips a slot whose intention is asked or snoozed and says why", () => {
+    const asked = mindWith([{ id: 10, key: "get_name", op: "nudge", actor: "agent", turn: 1, payload: { approach: "what should I call you?" } }]);
+    const r = nextBestAsk(base({ turn: 1 }), "text", asked, NOW);
+    expect(r.slot).toBe("need");
+    const snoozed = mindWith([
+      { id: 10, key: "get_name", op: "nudge", actor: "agent", turn: 1, payload: { approach: "what should I call you?" } },
+      { id: 11, key: "get_name", op: "outcome", actor: "system", turn: 1, payload: { receptivity: 3 } },
+    ]);
+    expect(nextBestAsk(base({ turn: 2 }), "text", snoozed, NOW).slot).toBe("need");
+    // two turns later the name is back in front
+    expect(nextBestAsk(base({ turn: 3 }), "text", snoozed, NOW).slot).toBe("user_name");
+    expect(nextBestAsk(base({ turn: 3 }), "text", snoozed, NOW).hint).toMatch(/Raised 1× before, receptivity 3\/10/);
+  });
+
+  it("without a mind view nothing changes (legacy callers keep the attempts counters)", () => {
+    expect(nextBestAsk(base(), "text").slot).toBe("user_name");
+    expect(stateBlock(base(), "text")).not.toContain("ON MY MIND");
+  });
+
+  it("a declined Gmail comes back in main mode once its intention is eligible again, and only then", () => {
+    const declined = mindWith([{ id: 10, key: "connect_gmail", op: "outcome", actor: "system", turn: 2, payload: { receptivity: 2, note: "declined on the consent screen" } }]);
+    const s = base({ mode: "main", user_name: "Bill", need: "cancel gym", gmail_status: "declined", value_moment_at: "2026-09-26T11:00:00Z", agent_name: "Jarvis" });
+    // snoozed 12 turns and 2 hours from the outcome
+    expect(nextBestAsk({ ...s, turn: 5 }, "text", declined, NOW).slot).toBeNull();
+    expect(nextBestAsk({ ...s, turn: 5 }, "text", declined, NOW).hint).toMatch(/On hold: connect_gmail snoozed/);
+    expect(nextBestAsk({ ...s, turn: 14 }, "text", declined, NOW + 3 * 3600_000).slot).toBe("gmail");
+    expect(nextBestAsk({ ...s, turn: 14 }, "text", declined, NOW + 3 * 3600_000).hint).toMatch(/passed on Gmail before/);
+    // never in onboarding, and never without a mind view
+    expect(nextBestAsk({ ...s, mode: "onboarding", turn: 14 }, "text", declined, NOW + 3 * 3600_000).slot).toBeNull();
+    expect(nextBestAsk({ ...s, turn: 14 }, "text").slot).toBeNull();
+  });
+
+  it("the STATE block carries the turn and the receptivity note", () => {
+    const m = mindWith([
+      { id: 10, key: "connect_gmail", op: "nudge", actor: "agent", turn: 2, payload: { approach: "so I can find the membership email?" } },
+      { id: 11, key: "connect_gmail", op: "outcome", actor: "system", turn: 2, payload: { receptivity: 8, note: "asked if it is read-only" } },
+    ]);
+    const block = stateBlock(base({ user_name: "Bill", need: "cancel gym", turn: 3 }), "text", m, NOW);
+    expect(block).toContain("| turn: 3");
+    expect(block).toMatch(/next_best_ask: gmail — .*receptivity 8\/10 \("asked if it is read-only"\)\. Different angle this time: /);
   });
 });
 

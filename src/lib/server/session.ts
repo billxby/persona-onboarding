@@ -1,3 +1,4 @@
+import { ensureMind } from "@/lib/memory/mind";
 import type { SessionRow } from "@/lib/shared/types";
 import { db, isUniqueViolation } from "./db";
 
@@ -19,7 +20,12 @@ export async function createSession(input: { id?: string; owner_uid?: string | n
   if (input.id) row.id = input.id;
   if (input.owner_uid) row.owner_uid = input.owner_uid;
   const { data, error } = await db().from("sessions").insert(row).select().single();
-  if (!error) return data as SessionRow;
+  if (!error) {
+    const created = data as SessionRow;
+    // what is on the agent's mind from the first turn: name, need, Gmail, agent name (DESIGN §13b)
+    await ensureMind(created.id).catch((e) => console.warn("[session] mind seed failed:", e instanceof Error ? e.message : e));
+    return created;
+  }
   if (isUniqueViolation(error) && input.id) {
     const existing = await getSession(input.id);
     if (!existing) throw error;

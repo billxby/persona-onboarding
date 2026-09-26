@@ -7,6 +7,7 @@ import { env, googleConfigured } from "@/lib/server/env";
 import { insertEvent } from "@/lib/server/messages";
 import { patchSession } from "@/lib/server/session";
 import { assertFact } from "@/lib/memory/store";
+import { recordOutcome, settleIfOpen } from "@/lib/memory/mind";
 
 export { googleConfigured };
 
@@ -111,13 +112,31 @@ export async function markGmail(session_id: string, status: Exclude<GmailStatus,
     mock_inbox: opts.mock ? true : undefined,
     oauth_state: null,
   }) as Partial<SessionRow>);
+  const turn = (session.turn ?? 0) + 1;
+  const mind = async (what: string, p: Promise<unknown>) => {
+    try {
+      await p;
+    } catch (e) {
+      console.warn(`[gmail] mind: ${what} failed:`, e instanceof Error ? e.message : e);
+    }
+  };
   if (status === "connected") {
     await insertEvent(session_id, "oauth_success", { email: email ?? null, mock: !!opts.mock });
     const evidence_ref = opts.mock ? "demo_inbox" : "google_userinfo";
     if (email) await assertFact(session_id, { predicate: "email", object: email, source: "oauth", actor: "system", evidence_ref });
     if (opts.name && !opts.mock) await assertFact(session_id, { predicate: "name", object: opts.name, source: "oauth", actor: "system", evidence_ref });
+    await mind("settle", settleIfOpen(session_id, { key: "connect_gmail", reason: opts.mock ? "demo inbox connected" : "Gmail connected", turn, actor: "system", evidence_ref }));
   } else {
-    await insertEvent(session_id, "oauth_declined", { status, reason: opts.reason ?? (status === "declined" ? "access_denied" : "no_callback") });
+    const reason = opts.reason ?? (status === "declined" ? "access_denied" : "no_callback");
+    await insertEvent(session_id, "oauth_declined", { status, reason });
+    // how they took the Gmail ask, in the ledger's terms: a no backs it off hard, a timeout only a little.
+    // The intention stays on the mind either way (core ask): "much later, another angle", never "never".
+    const read = reason.startsWith("verbal_no")
+      ? { receptivity: 2, signal: "declined" as const, note: "said no to connecting Gmail" }
+      : reason === "access_denied"
+        ? { receptivity: 2, signal: "declined" as const, note: "declined on Google's consent screen" }
+        : { receptivity: 4, signal: "ignored" as const, note: "link sent, no reaction before it timed out" };
+    await mind("outcome", recordOutcome(session_id, { key: "connect_gmail", ...read, turn, actor: "system", evidence_ref: `gmail:${reason}` }));
   }
   return session;
 }

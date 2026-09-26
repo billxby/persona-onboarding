@@ -1,4 +1,5 @@
 import type { RealtimeTokenResponse } from "@/lib/shared/types";
+import { ensureMind } from "@/lib/memory/mind";
 import { env } from "@/lib/server/env";
 import { activeBeliefs, detectDrop } from "@/lib/server/messages";
 import { buildPrompt, PROMPT_VERSION } from "@/lib/server/prompt";
@@ -21,8 +22,8 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "session not found" }, { status: 404 });
   session = await detectDrop(session);
 
-  const beliefs = await activeBeliefs(session.id);
-  const instructions = await buildPrompt(session, "call", beliefs);
+  const [beliefs, mind] = await Promise.all([activeBeliefs(session.id), ensureMind(session.id, session.turn ?? 0).catch(() => undefined)]);
+  const instructions = buildPrompt(session, "call", beliefs, mind);
   const tools = toolJsonSchemas("call");
   const model = env.REALTIME_MODEL;
   const voice = env.REALTIME_VOICE;

@@ -1,5 +1,7 @@
 import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
-import type { Belief, ChatEvent, ChatTrigger, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
+import { detectNudges } from "@/lib/memory/intentions";
+import { ensureMind, mindFor, recordNudge } from "@/lib/memory/mind";
+import type { Belief, ChatEvent, ChatTrigger, Intention, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
 import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, isHello, OPENER_ASK, OPENER_CARD_LINE, OPENER_INTRO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import { env } from "../env";
@@ -8,7 +10,8 @@ import { activeBeliefs, detectDrop, DROP_COPY, insertEvent, insertMessage, listE
 import * as promptMod from "../prompt";
 import { fastModel, textModel } from "../providers";
 import { acquireReplyLock, getSession, patchSession, releaseReplyLock } from "../session";
-import { bumpAttempt, isGraduated, nextBestAsk, pushQuestion } from "../state";
+import { bumpAttempt, isGraduated, nextBestAsk, pushQuestion, turnOf } from "../state";
+import { assessReactions } from "./receptivity";
 import { TOOL_DEFS } from "../tools/definitions";
 import { insertAppClipCard, runTool } from "../tools/run";
 import { insertVoicemail } from "../voicemail";
@@ -57,13 +60,13 @@ interface PromptParts {
 }
 
 type PromptModule = typeof promptMod & {
-  buildPromptParts?: (session: SessionRow, channel: "text" | "call", beliefs: Belief[]) => PromptParts;
+  buildPromptParts?: (session: SessionRow, channel: "text" | "call", beliefs: Belief[], mind?: Intention[]) => PromptParts;
 };
 
-function buildParts(session: SessionRow, beliefs: Belief[]): PromptParts {
+function buildParts(session: SessionRow, beliefs: Belief[], mind: Intention[]): PromptParts {
   const mod = promptMod as PromptModule;
-  if (typeof mod.buildPromptParts === "function") return mod.buildPromptParts(session, "text", beliefs);
-  return { static: "", dynamic: mod.buildPrompt(session, "text", beliefs) };
+  if (typeof mod.buildPromptParts === "function") return mod.buildPromptParts(session, "text", beliefs, mind);
+  return { static: "", dynamic: mod.buildPrompt(session, "text", beliefs, mind) };
 }
 
 function systemMessages(parts: PromptParts, extra: string[]): SystemModelMessage[] {
@@ -183,7 +186,9 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
       const fresh = (await getSession(session_id)) ?? session!;
       emit({ type: "session", session: fresh });
       emit({ type: "beliefs", beliefs: await activeBeliefs(session_id) });
-      emit({ type: "done", latency_ms: Date.now() - t0, next_best_ask: nextBestAsk(fresh, "text") });
+      const mind = await mindFor(session_id).catch(() => [] as Intention[]);
+      emit({ type: "mind", intentions: mind });
+      emit({ type: "done", latency_ms: Date.now() - t0, next_best_ask: nextBestAsk(fresh, "text", mind) });
     };
 
     // Deterministic triggers: no model call.
@@ -253,15 +258,25 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
 
   emit({ type: "typing", on: true });
 
+  const lastUser = [...thread].reverse().find((m) => m.role === "user" && m.kind === "text" && m.channel === "text");
+  const lastUserText = lastUser?.content ?? "";
+
+  // What is on my mind, and how did they take what I raised last turn? (DESIGN §13b)
+  let mind = await ensureMind(session_id, turnOf(session)).catch((e) => {
+    console.warn("[chat] mind unavailable:", e instanceof Error ? e.message : e);
+    return [] as Intention[];
+  });
+  if (trigger === "user" && lastUserText && mind.some((r) => r.status === "asked")) {
+    mind = (await assessReactions({ session, mind, userText: lastUserText, channel: "text" })).mind;
+  }
+
   const beliefs = await activeBeliefs(session_id);
-  const nbaBefore = nextBestAsk(session, "text");
-  const parts = buildParts(session, beliefs);
+  const nbaBefore = nextBestAsk(session, "text", mind);
+  const parts = buildParts(session, beliefs, mind);
 
   const hints: string[] = [];
   const hint = triggerHint(trigger, reason, session);
   if (hint) hints.push(hint);
-  const lastUser = [...thread].reverse().find((m) => m.role === "user" && m.kind === "text" && m.channel === "text");
-  const lastUserText = lastUser?.content ?? "";
   if (trigger === "user" && lastUserText) {
     const addressed = detectAddressedName(lastUserText, [session.user_name, session.agent_name, "persona"]);
     if (addressed) hints.push(`The user may be addressing you as "${addressed}". If so, call set_slot(agent_name, "${addressed}") and then use it.`);
@@ -376,10 +391,24 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
     }
     if (ring && s.channel_pref !== "call") patch.channel_pref = "call";
     patch.prompt_version = promptMod.PROMPT_VERSION;
+    patch.turn = turnOf(s) + 1;
     return patch;
   });
   if (valueNow && !session.value_moment_at) await insertEvent(session_id, "value_moment", { via: emailsReturned ? "emails" : "draft", trigger });
   if (asked && nbaBefore.slot) await insertEvent(session_id, "steer", { slot: nbaBefore.slot, question: questions[0], trigger });
+
+  // Which of my intentions did this reply raise? Mark them asked so next turn's reply gets scored.
+  const thisTurn = turnOf(session) + 1;
+  const fresh = await mindFor(session_id).catch(() => mind);
+  for (const n of detectNudges(bubbles, fresh, nbaBefore.slot, "text")) {
+    if (fresh.find((r) => r.key === n.key)?.status === "asked") continue; // a tool (the link card) already logged it
+    try {
+      await recordNudge(session_id, { key: n.key, approach: n.approach, channel: "text", turn: thisTurn, actor: "agent", evidence_ref: "chat:bubbles" });
+      await insertEvent(session_id, "intention", { op: "nudge", key: n.key, approach: n.approach, turn: thisTurn, via: "detected" });
+    } catch (e) {
+      console.warn("[chat] nudge not recorded:", e instanceof Error ? e.message : e);
+    }
+  }
 
   await maybeRewriteSummary(session_id);
 }

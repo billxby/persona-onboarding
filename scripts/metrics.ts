@@ -7,6 +7,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
 
+import { mindFor } from "@/lib/memory/mind";
 import { db } from "@/lib/server/db";
 import { latencyStats, listEvents, listMessages } from "@/lib/server/messages";
 import { getSession } from "@/lib/server/session";
@@ -41,6 +42,8 @@ export interface SessionMetrics {
   guard_regenerations: number;
   supervisor_patches: number;
   calls: number;
+  /** what was on the agent's mind: per intention, how often it was raised and how it landed (DESIGN §13b) */
+  intentions: Record<string, { status: string; nudges: number; receptivity: number | null; mean: number | null }>;
 }
 
 const SLOTS: SlotName[] = ["user_name", "need", "gmail", "agent_name"];
@@ -151,6 +154,7 @@ export async function metricsFor(session_id: string): Promise<SessionMetrics | n
     guard_regenerations: byType("guard").filter((e) => !!(e.payload as { regenerated?: boolean }).regenerated).length,
     supervisor_patches: byType("supervisor").filter((e) => !!(e.payload as { patched?: boolean }).patched).length,
     calls: byType("call_started").length,
+    intentions: Object.fromEntries((await mindFor(session_id).catch(() => [])).map((r) => [r.key, { status: r.status, nudges: r.nudges, receptivity: r.receptivity, mean: r.receptivity_mean }])),
   };
 }
 
@@ -167,6 +171,11 @@ export function formatMetrics(m: SessionMetrics): string {
     `value   ${fmtNum(m.value_moment_s, "s")}   resume_after_hangup ${fmtNum(m.resume_ms, "ms")}   calls=${m.calls}`,
     `voice   latency p50=${fmtNum(m.latency.p50, "ms")} p95=${fmtNum(m.latency.p95, "ms")} n=${m.latency.n}`,
     `tools   ${m.tool_calls} calls ${JSON.stringify(m.tool_calls_by_name)}  rejected_slots=${m.rejected_slots} guard_regens=${m.guard_regenerations} supervisor_patches=${m.supervisor_patches}`,
+    `mind    ${
+      Object.entries(m.intentions)
+        .map(([k, v]) => `${k}=${v.status}/${v.nudges}x${v.receptivity == null ? "" : ` ${v.receptivity}/10`}${v.mean != null && v.nudges > 1 ? ` avg ${v.mean}` : ""}`)
+        .join(" | ") || "(no intentions)"
+    }`,
   ].join("\n");
 }
 
