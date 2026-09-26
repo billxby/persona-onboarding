@@ -6,16 +6,28 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "simulate": "tsx scripts/simulate.ts",
+    "metrics": "tsx scripts/metrics.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.65",
+    "@ai-sdk/openai": "^4.0.78",
+    "@openai/agents": "^0.18.0",
+    "@supabase/supabase-js": "^2.117.2",
+    "ai": "^7.0.116",
     "clsx": "^2.1.1",
+    "googleapis": "^182.0.0",
     "lucide-react": "^1.48.0",
     "motion": "^13.4.4",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -23,9 +35,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^18.0.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }

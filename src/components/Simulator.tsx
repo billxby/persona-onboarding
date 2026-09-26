@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { getBrain } from "@/lib/brain";
+import { callController } from "@/lib/call/controller";
 import { useSessionStore } from "@/lib/session/store";
 import type { ReactionKind } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
@@ -11,6 +12,7 @@ import { CallBanner } from "@/components/imessage/CallBanner";
 import { IMessageThread } from "@/components/imessage/IMessageThread";
 import { PhoneFrame } from "@/components/phone/PhoneFrame";
 import { PHONE_H, PHONE_W, usePhoneScale } from "@/components/phone/usePhoneScale";
+import { ProgressBar } from "@/components/progress/ProgressBar";
 
 /**
  * The phone: iMessage thread with the call screen overlaid when a call is
@@ -40,6 +42,10 @@ export function Simulator() {
   // posts its opener if the thread is empty.
   useEffect(() => {
     if (!hydrated) return;
+    // dev-only handle for browser walkthroughs (scripts/e2e.mjs)
+    if (process.env.NODE_ENV !== "production") {
+      (window as unknown as { __persona?: unknown }).__persona = { callController, getBrain, session: useSessionStore };
+    }
     const st = useSessionStore.getState();
     useSessionStore.setState({ assistantTyping: false });
     if (st.call.state === "ringing" || st.call.state === "connecting" || st.call.state === "live") {
@@ -51,11 +57,13 @@ export function Simulator() {
     }
   }, [hydrated]);
 
-  // Empty thread (fresh load, restart, or reset from another tab): the brain opens.
-  const messageCount = messages.length;
+  // The brain bootstraps once per session id (idempotent): on load it (re)joins the
+  // server session and mirrors it; on an empty thread the server inserts the opener.
+  const sessionId = useSessionStore((s) => s.sessionId);
+  const threadEmpty = messages.length === 0;
   useEffect(() => {
-    if (hydrated && messageCount === 0) void getBrain().start();
-  }, [hydrated, messageCount]);
+    if (hydrated) void getBrain().start();
+  }, [hydrated, sessionId, threadEmpty]);
 
   const onSend = (text: string, replyToId?: string) => {
     const m = appendMessage({ role: "user", content: { kind: "text", text }, status: "sending", replyToId });
@@ -76,6 +84,7 @@ export function Simulator() {
 
   return (
     <div style={{ width: PHONE_W * scale, height: PHONE_H * scale }} className="relative">
+      {hydrated && <ProgressBar />}
       <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }} className="absolute left-0 top-0">
         <PhoneFrame dark={showCall}>
           {!hydrated ? null : (

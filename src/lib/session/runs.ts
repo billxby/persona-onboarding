@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { useSessionStore, type SessionState } from "./store";
+import { sanitizeMessages, useSessionStore, type SessionState } from "./store";
 import type { ChatMessage, Phase, SessionEvent, Slots } from "./types";
 
 /**
@@ -76,7 +76,7 @@ export function restoreRun(id: string) {
     createdAt: run.createdAt,
     phase: run.phase,
     slots: run.slots,
-    messages: run.messages,
+    messages: sanitizeMessages(run.messages),
     events: run.events,
     channel: "text",
     assistantTyping: false,

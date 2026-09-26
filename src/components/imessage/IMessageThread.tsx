@@ -52,7 +52,7 @@ export function IMessageThread({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length, typing, replyToId]);
 
-  const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  const byId = useMemo(() => new Map(messages.filter((m) => !!m.content).map((m) => [m.id, m])), [messages]);
   const lastOutgoing = [...messages].reverse().find((m) => m.role === "user");
   const activeMessage = actions ? byId.get(actions.id) : undefined;
   const appClipMessage = appClipFor ? byId.get(appClipFor) : undefined;
@@ -74,7 +74,7 @@ export function IMessageThread({
   const openLink = useCallback(
     (id: string) => {
       const m = byId.get(id);
-      if (m?.content.kind === "link") onOpenLink(id, m.content.link.url);
+      if (m?.content?.kind === "link") onOpenLink(id, m.content.link.url);
     },
     [byId, onOpenLink],
   );
@@ -119,7 +119,10 @@ export function IMessageThread({
                     onOpenLink={openLink}
                     onOpenAppClip={setAppClipFor}
                   />
-                  {m.id === lastOutgoing?.id && m.status && (
+                  {m.role === "user" && m.status === "failed" && (
+                    <div className="mt-0.5 text-right text-[11px] font-medium text-ios-red">Not Delivered</div>
+                  )}
+                  {m.id === lastOutgoing?.id && m.status && m.status !== "failed" && (
                     <div className="mt-0.5 text-right text-[11px] text-black/45">
                       {m.status === "read" ? `Read ${m.readAt ? formatClock(new Date(m.readAt)) : ""}`.trim() : m.status === "delivered" ? "Delivered" : ""}
                     </div>

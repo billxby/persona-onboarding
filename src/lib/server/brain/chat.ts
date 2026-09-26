@@ -1,0 +1,422 @@
+import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
+import type { Belief, ChatEvent, ChatTrigger, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
+import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs } from "@/lib/shared/text";
+import { sleep } from "@/lib/utils";
+import { env } from "../env";
+import { markGmail } from "../gmail/oauth";
+import { activeBeliefs, detectDrop, DROP_COPY, insertEvent, insertMessage, listMessages, recentThread } from "../messages";
+import * as promptMod from "../prompt";
+import { fastModel, textModel } from "../providers";
+import { acquireReplyLock, getSession, patchSession, releaseReplyLock } from "../session";
+import { bumpAttempt, isGraduated, nextBestAsk, pushQuestion } from "../state";
+import { TOOL_DEFS } from "../tools/definitions";
+import { runTool } from "../tools/run";
+import { insertVoicemail } from "../voicemail";
+import { checkReply } from "./guard";
+
+/** DESIGN.md §7.1: the bot texts first. Inserted by the server so the first paint already has it. */
+export const OPENER = "Hey, I'm your Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live.";
+
+export type Emit = (e: ChatEvent) => void;
+
+const TURN_TIMEOUT_MS = 45_000;
+
+/** Reasoning models (OpenAI gpt-5.x fallback) reject `temperature`; Claude takes it and we keep thinking off for latency. */
+const samplingFor = (temperature: number) => (env.TEXT_PROVIDER === "openai" ? { reasoning: "low" as const } : { temperature });
+const MAX_STEPS = 6;
+
+// ---------------------------------------------------------------------------
+// Prompt assembly
+// ---------------------------------------------------------------------------
+
+interface PromptParts {
+  static: string;
+  dynamic: string;
+}
+
+type PromptModule = typeof promptMod & {
+  buildPromptParts?: (session: SessionRow, channel: "text" | "call", beliefs: Belief[]) => PromptParts;
+};
+
+function buildParts(session: SessionRow, beliefs: Belief[]): PromptParts {
+  const mod = promptMod as PromptModule;
+  if (typeof mod.buildPromptParts === "function") return mod.buildPromptParts(session, "text", beliefs);
+  return { static: "", dynamic: mod.buildPrompt(session, "text", beliefs) };
+}
+
+function systemMessages(parts: PromptParts, extra: string[]): SystemModelMessage[] {
+  const out: SystemModelMessage[] = [];
+  if (parts.static.trim()) {
+    out.push(
+      env.TEXT_PROVIDER === "anthropic"
+        ? { role: "system", content: parts.static, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
+        : { role: "system", content: parts.static },
+    );
+  }
+  const dynamic = extra.length ? `${parts.dynamic}\n\nTHIS TURN\n${extra.map((h) => `- ${h}`).join("\n")}` : parts.dynamic;
+  out.push({ role: "system", content: dynamic });
+  return out;
+}
+
+function triggerHint(trigger: ChatTrigger, reason: string | undefined, session: SessionRow): string | null {
+  switch (trigger) {
+    case "call_ended": {
+      const prefersText = reason === "user_hangup" || reason === "dropped" || reason === "silence" || reason === "mic_denied";
+      return `The call just ended (reason: ${reason ?? "unknown"}). Continue here in ONE short message: what you took from the call and the next step. Nothing re-asked.${prefersText ? " They prefer text now: never offer a call again unless they ask." : ""}`;
+    }
+    case "gmail_connected":
+      return `Gmail just connected${session.gmail_email ? ` as ${session.gmail_email}` : ""}. Call recent_emails(3) FIRST, then give one real observation (unread count, who needs a reply) and ask ONE question, e.g. offer to draft the most urgent reply.`;
+    case "gmail_declined":
+      return reason === "timeout"
+        ? "The Gmail connect timed out. Acknowledge in one line, no guilt, and deliver one concrete plan for the need without Gmail (you may offer the demo inbox link once via request_gmail_connect only if they ask)."
+        : "Gmail was declined. Acknowledge in one line, no guilt, and deliver one concrete plan for the need without Gmail.";
+    case "welcome_back":
+      return "The user came back after a while. Greet by name if known, recall the need in a few words, and offer to pick up where you left off. One question max.";
+    case "silence_end":
+      return "The call ended because the user went silent. One short line: no pressure, you're here in text, plus one easy next step. Never offer a call again unless asked.";
+    default:
+      return null;
+  }
+}
+
+function syntheticEvent(trigger: ChatTrigger, reason: string | undefined, session: SessionRow): string {
+  switch (trigger) {
+    case "call_ended":
+      return `(system event: the call just ended — reason: ${reason ?? "unknown"}. Continue here.)`;
+    case "gmail_connected":
+      return `(system event: Gmail connected${session.gmail_email ? ` as ${session.gmail_email}` : ""}.)`;
+    case "gmail_declined":
+      return `(system event: the Gmail connection ${reason === "timeout" ? "timed out" : "was declined"}.)`;
+    case "welcome_back":
+      return "(system event: the user reopened the chat after a break.)";
+    case "silence_end":
+      return "(system event: the call ended after the user went silent.)";
+    default:
+      return "(system event: continue.)";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// History → ModelMessage[]
+// ---------------------------------------------------------------------------
+
+function rowToText(row: MessageRow): { role: "user" | "assistant"; text: string } | null {
+  const onCall = row.channel === "call" ? "(said on the call) " : "";
+  switch (row.kind) {
+    case "text":
+      if (row.role === "user") return row.content ? { role: "user", text: `${onCall}${row.content}` } : null;
+      if (row.role === "assistant") return row.content ? { role: "assistant", text: `${onCall}${row.content}` } : null;
+      return null;
+    case "link_card":
+      return row.role === "assistant" ? { role: "assistant", text: "[sent the Connect Gmail link card]" } : null;
+    case "summary_card":
+      return { role: "assistant", text: "[sent the summary card]" };
+    case "contact_card":
+      return { role: "assistant", text: `[sent my contact card as ${row.content ?? row.payload?.name ?? "Persona"}]` };
+    case "voicemail":
+      return { role: "assistant", text: `[left a voicemail: ${row.payload?.transcript ?? row.content ?? ""}]` };
+    case "call_log":
+      return { role: "assistant", text: `[${row.content ?? "call ended"}]` };
+    default:
+      return null;
+  }
+}
+
+export function historyToMessages(thread: MessageRow[]): ModelMessage[] {
+  const out: { role: "user" | "assistant"; text: string }[] = [];
+  for (const row of thread) {
+    const m = rowToText(row);
+    if (!m) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === m.role) last.text = `${last.text}\n\n${m.text}`;
+    else out.push({ ...m });
+  }
+  if (out.length === 0 || out[0].role !== "user") out.unshift({ role: "user", text: "(joined the chat)" });
+  return out.map((m) => ({ role: m.role, content: m.text }) as ModelMessage);
+}
+
+// ---------------------------------------------------------------------------
+// The turn
+// ---------------------------------------------------------------------------
+
+/** Run one text-channel turn and stream ChatEvents to `emit`. Never throws (errors are emitted). */
+export async function runTextTurn(session_id: string, trigger: ChatTrigger = "user", reason: string | undefined, emit: Emit): Promise<void> {
+  const t0 = Date.now();
+  const locked = await acquireReplyLock(session_id);
+  if (!locked) {
+    emit({ type: "busy" });
+    return;
+  }
+  try {
+    let session = await getSession(session_id);
+    if (!session) {
+      emit({ type: "error", message: "session_not_found" });
+      return;
+    }
+    session = await detectDrop(session);
+
+    const finish = async () => {
+      const fresh = (await getSession(session_id)) ?? session!;
+      emit({ type: "session", session: fresh });
+      emit({ type: "beliefs", beliefs: await activeBeliefs(session_id) });
+      emit({ type: "done", latency_ms: Date.now() - t0, next_best_ask: nextBestAsk(fresh, "text") });
+    };
+
+    // Deterministic triggers: no model call.
+    if (trigger === "open") {
+      const thread = await listMessages(session_id, { channel: "text" });
+      if (!thread.some((m) => m.role === "assistant")) {
+        const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: OPENER, channel: "text" });
+        emit({ type: "message", message: row });
+      }
+      await finish();
+      return;
+    }
+    if (trigger === "dropped") {
+      const thread = await listMessages(session_id, { channel: "text" });
+      const lastAssistant = [...thread].reverse().find((m) => m.role === "assistant" && m.kind === "text");
+      const copy = DROP_COPY(session.user_name);
+      if (lastAssistant?.content !== copy) {
+        const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: copy, channel: "text" });
+        await insertEvent(session_id, "resume", { reason: "dropped", via: "chat_trigger" });
+        emit({ type: "message", message: row });
+      }
+      await finish();
+      return;
+    }
+    if (trigger === "voicemail") {
+      // /api/call/event (declined) already inserted the voicemail; only add one if it is missing
+      const last = (await listMessages(session_id, { limit: 1000 })).at(-1);
+      if (last?.kind !== "voicemail") {
+        const row = await insertVoicemail(session);
+        if (row) emit({ type: "message", message: row });
+      }
+      await finish();
+      return;
+    }
+
+    if (trigger === "gmail_declined" && session.gmail_status === "pending") {
+      await markGmail(session_id, reason === "timeout" ? "failed" : "declined");
+      session = (await getSession(session_id)) ?? session;
+    }
+
+    await llmTurn(session, trigger, reason, emit);
+    await finish();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[chat] turn failed:", message);
+    await insertEvent(session_id, "error", { where: "chat", trigger, message: message.slice(0, 500) });
+    emit({ type: "typing", on: false });
+    emit({ type: "error", message });
+  } finally {
+    await releaseReplyLock(session_id);
+  }
+}
+
+const slotEmpty = (s: SessionRow, slot: SlotName) =>
+  slot === "user_name" ? !s.user_name : slot === "need" ? !s.need : slot === "gmail" ? s.gmail_status === "none" : !s.agent_name;
+
+async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string | undefined, emit: Emit): Promise<void> {
+  const session_id = session.id;
+  const thread = await recentThread(session_id, { n: 14, channels: ["text", "call"] });
+
+  // Nothing to answer (e.g. a retried debounce after the reply already landed): stay quiet.
+  if (trigger === "user") {
+    const lastThreadRow = [...thread].reverse().find((m) => m.channel === "text" && m.kind !== "tapback" && (m.role === "user" || m.role === "assistant"));
+    if (!lastThreadRow || lastThreadRow.role === "assistant") return;
+  }
+
+  emit({ type: "typing", on: true });
+
+  const beliefs = await activeBeliefs(session_id);
+  const nbaBefore = nextBestAsk(session, "text");
+  const parts = buildParts(session, beliefs);
+
+  const hints: string[] = [];
+  const hint = triggerHint(trigger, reason, session);
+  if (hint) hints.push(hint);
+  const lastUser = [...thread].reverse().find((m) => m.role === "user" && m.kind === "text" && m.channel === "text");
+  const lastUserText = lastUser?.content ?? "";
+  if (trigger === "user" && lastUserText) {
+    const addressed = detectAddressedName(lastUserText, [session.user_name, session.agent_name, "persona"]);
+    if (addressed) hints.push(`The user may be addressing you as "${addressed}". If so, call set_slot(agent_name, "${addressed}") and then use it.`);
+    if (looksLikeCallRequest(lastUserText)) hints.push('The user asked for a call: call switch_channel("call") and say you\'re calling now.');
+    if (looksLikeSkip(lastUserText)) hints.push('The user wants to skip: respect it immediately. If they want to skip everything, call graduate("skip_all").');
+  }
+  if (session.summary) hints.push(`EARLIER (summary): ${session.summary}`);
+
+  const system = systemMessages(parts, hints);
+  const messages = historyToMessages(thread);
+  const last = messages[messages.length - 1];
+  if (last.role !== "user") messages.push({ role: "user", content: syntheticEvent(trigger, reason, session) });
+
+  // Tools: one implementation (runTool) for both channels.
+  let current = session;
+  let ring = false;
+  let emailsReturned = false;
+  let drafted = false;
+  let toolMessages = 0;
+  const toolLog: { name: string; result: ToolResult }[] = [];
+  const tools: ToolSet = {};
+  for (const [name, def] of Object.entries(TOOL_DEFS)) {
+    if (def.channels && !def.channels.includes("text")) continue;
+    tools[name] = tool({
+      description: def.description,
+      inputSchema: def.input,
+      execute: async (input: unknown) => {
+        const r = await runTool({ session: current, channel: "text" }, name, input);
+        current = r.session;
+        if (r.effects.ring) ring = true;
+        if (r.effects.emails?.length) emailsReturned = true;
+        if (name === "draft_reply" && r.result.ok) drafted = true;
+        for (const m of r.effects.messages ?? []) {
+          toolMessages++;
+          emit({ type: "message", message: m });
+        }
+        emit({ type: "tool", name, ok: r.result.ok, ring: r.effects.ring, next_best_ask: r.result.next_best_ask });
+        toolLog.push({ name, result: r.result });
+        return r.result;
+      },
+    });
+  }
+
+  const result = await generateText({
+    model: textModel(),
+    instructions: system,
+    messages,
+    tools,
+    stopWhen: isStepCount(MAX_STEPS),
+    maxOutputTokens: 450,
+    ...samplingFor(0.6),
+    abortSignal: AbortSignal.timeout(TURN_TIMEOUT_MS),
+  });
+
+  let text = stripMarkdown(result.text ?? "");
+  if (!text && toolMessages === 0) {
+    // Ran out of steps mid-tool-loop or the model stayed silent: ask for the reply with the tool results as context.
+    text = await replyFromToolResults(system, messages, toolLog);
+  }
+  let bubbles = splitBubbles(text);
+
+  // Output guard: local checks, then Haiku. On a miss, rewrite once.
+  const guard: Record<string, unknown> = { ok: true, regenerated: false, source: "none" };
+  if (bubbles.length) {
+    const verdict = await checkReply({ session: current, beliefs: await activeBeliefs(session_id), bubbles });
+    guard.ok = verdict.ok;
+    guard.source = verdict.source;
+    if (!verdict.ok && verdict.issue) {
+      guard.issue = verdict.issue;
+      const rewritten = await rewriteReply(system, bubbles, verdict.issue);
+      if (rewritten.length) {
+        bubbles = rewritten;
+        guard.regenerated = true;
+      }
+    }
+  }
+  await insertEvent(session_id, "guard", { ...guard, bubbles: bubbles.length, tool_calls: toolLog.map((t) => t.name) });
+
+  // Land the bubbles with typing pauses.
+  for (const b of bubbles) {
+    await sleep(typingDelayMs(b));
+    const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: b, channel: "text" });
+    emit({ type: "message", message: row });
+  }
+  emit({ type: "typing", on: false });
+
+  // Bookkeeping on the session row.
+  const questions = questionsIn(bubbles);
+  const asked = questions.length > 0;
+  const valueNow = emailsReturned || drafted;
+  await patchSession(session_id, (s) => {
+    let patch: Partial<SessionRow> = {};
+    let acc: SessionRow = s;
+    for (const q of questions) {
+      const p = pushQuestion(acc, q);
+      patch = { ...patch, ...p };
+      acc = { ...acc, ...p };
+    }
+    if (asked && nbaBefore.slot && slotEmpty(s, nbaBefore.slot)) patch = { ...patch, ...bumpAttempt(s, nbaBefore.slot) };
+    if (s.phase === "warmup" && asked) patch.phase = "collecting";
+    if (valueNow && !s.value_moment_at) {
+      patch.value_moment_at = new Date().toISOString();
+      if (!isGraduated(s)) patch.phase = "value";
+    }
+    if (ring && s.channel_pref !== "call") patch.channel_pref = "call";
+    patch.prompt_version = promptMod.PROMPT_VERSION;
+    return patch;
+  });
+  if (valueNow && !session.value_moment_at) await insertEvent(session_id, "value_moment", { via: emailsReturned ? "emails" : "draft", trigger });
+  if (asked && nbaBefore.slot) await insertEvent(session_id, "steer", { slot: nbaBefore.slot, question: questions[0], trigger });
+
+  await maybeRewriteSummary(session_id);
+}
+
+/** Fallback when the model produced no text: re-ask for the reply with the tool results inlined (no tools). */
+async function replyFromToolResults(system: SystemModelMessage[], messages: ModelMessage[], toolLog: { name: string; result: ToolResult }[]): Promise<string> {
+  try {
+    const compact = toolLog.map((t) => `${t.name}: ${JSON.stringify(t.result).slice(0, 400)}`).join("\n");
+    const { text } = await generateText({
+      model: textModel(),
+      instructions: system,
+      messages: [
+        ...messages,
+        {
+          role: "user",
+          content: `(system: you already ran your tools this turn. Results:\n${compact || "(none)"}\nNow write the reply: 2–3 short bubbles, no markdown.)`,
+        },
+      ],
+      maxOutputTokens: 300,
+      ...samplingFor(0.6),
+      abortSignal: AbortSignal.timeout(20_000),
+    });
+    return stripMarkdown(text ?? "");
+  } catch (e) {
+    console.warn("[chat] fallback reply failed:", e instanceof Error ? e.message : e);
+    return "";
+  }
+}
+
+/** Guard miss: rewrite the draft once, fixing only the reported issue. */
+async function rewriteReply(system: SystemModelMessage[], bubbles: string[], issue: string): Promise<string[]> {
+  try {
+    const { text } = await generateText({
+      model: textModel(),
+      instructions: system,
+      prompt: `Your draft reply was:\n\n${bubbles.join("\n\n")}\n\nProblem: ${issue}\n\nRewrite the reply fixing only that problem. Keep the facts and the tone. 2–3 short bubbles separated by blank lines, no markdown, at most one question. Output the reply only.`,
+      maxOutputTokens: 450,
+      ...samplingFor(0.4),
+      abortSignal: AbortSignal.timeout(20_000),
+    });
+    return splitBubbles(stripMarkdown(text ?? ""));
+  } catch (e) {
+    console.warn("[chat] rewrite failed; keeping the original:", e instanceof Error ? e.message : e);
+    return [];
+  }
+}
+
+/** Every 10 assistant turns, rewrite the rolling 5-line summary from the last 20 rows. */
+async function maybeRewriteSummary(session_id: string): Promise<void> {
+  try {
+    const all = await listMessages(session_id, { channel: "text" });
+    const assistantTurns = all.filter((m) => m.role === "assistant" && m.kind === "text").length;
+    if (assistantTurns === 0 || assistantTurns % 10 !== 0) return;
+    const transcript = all
+      .slice(-20)
+      .map(rowToText)
+      .filter((m): m is { role: "user" | "assistant"; text: string } => !!m)
+      .map((m) => `${m.role === "user" ? "User" : "Persona"}: ${m.text}`)
+      .join("\n");
+    const { text } = await generateText({
+      model: fastModel(),
+      instructions: "Summarise this chat for the assistant's own memory. At most 5 short lines: who the user is, what they want, what was done, what is pending, anything they asked to remember. Plain text, no markdown.",
+      prompt: transcript,
+      maxOutputTokens: 200,
+      ...samplingFor(0.2),
+      abortSignal: AbortSignal.timeout(10_000),
+    });
+    const summary = stripMarkdown(text ?? "").split("\n").filter(Boolean).slice(0, 5).join("\n");
+    if (summary) await patchSession(session_id, () => ({ summary }));
+  } catch (e) {
+    console.warn("[chat] summary rewrite skipped:", e instanceof Error ? e.message : e);
+  }
+}

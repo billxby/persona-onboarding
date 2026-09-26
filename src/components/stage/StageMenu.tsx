@@ -1,13 +1,37 @@
 "use client";
 
-import { Database, Ellipsis, History, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
+import { Database, Ellipsis, History, Inbox, Mail, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
-import { useSessionStore } from "@/lib/session/store";
+import { session, useSessionStore } from "@/lib/session/store";
 import { cn } from "@/lib/utils";
+import { connectUrl } from "@/components/progress/slotEdit";
+
+/** "Use demo inbox": connects the mock inbox for this session, then lets the brain react as if Gmail connected. */
+async function connectDemoInbox() {
+  const st = session.get();
+  st.logEvent("user.demo_inbox");
+  try {
+    const res = await fetch("/api/gmail/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: st.sessionId, mock: true }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; email?: string; error?: string };
+    if (!res.ok || data.ok === false) {
+      session.get().logEvent("gmail.demo_failed", { status: res.status, error: data.error });
+      return;
+    }
+    await getBrain().refresh?.();
+    getBrain().notifyGmail?.("connected", data.email ?? "demo@persona.test");
+  } catch (e) {
+    session.get().logEvent("gmail.demo_failed", { error: String(e) });
+  }
+}
 
 /**
  * Bottom-right control: open the behind-the-scenes page, restart the
@@ -22,6 +46,8 @@ export function StageMenu() {
   const messageCount = useSessionStore((s) => s.messages.length);
   const senderInContacts = useSessionStore((s) => s.senderInContacts);
   const setSenderInContacts = useSessionStore((s) => s.setSenderInContacts);
+  const gmail = useSessionStore((s) => s.slots.gmail);
+  const connection = useSessionStore((s) => s.connection);
 
   useEffect(() => {
     if (!open) return;
@@ -48,9 +74,9 @@ export function StageMenu() {
                   {sessionId.slice(0, 8)} · {phase} · {messageCount} msgs
                 </div>
               </div>
-              <span className="flex items-center gap-1.5 text-[11px] text-emerald-700">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                live
+              <span className={cn("flex items-center gap-1.5 text-[11px]", connection === "realtime" ? "text-emerald-700" : connection === "polling" ? "text-amber-700" : "text-rose-700")}>
+                <span className={cn("h-1.5 w-1.5 rounded-full", connection === "realtime" ? "animate-pulse bg-emerald-500" : connection === "polling" ? "bg-amber-400" : "bg-rose-500")} />
+                {connection}
               </span>
             </div>
 
@@ -63,6 +89,26 @@ export function StageMenu() {
                 disabled={callState !== "idle" && callState !== "ended"}
                 onClick={() => {
                   callController.ring();
+                  setOpen(false);
+                }}
+              />
+              <MenuButton
+                icon={Inbox}
+                label={gmail.status === "filled" ? "Demo inbox connected" : "Use demo inbox"}
+                hint={gmail.status === "filled" ? `connected as ${gmail.value}` : "20 mock emails, incl. one poisoned message"}
+                disabled={gmail.status === "filled"}
+                onClick={() => {
+                  void connectDemoInbox();
+                  setOpen(false);
+                }}
+              />
+              <MenuButton
+                icon={Mail}
+                label="Connect Gmail"
+                hint="opens the consent page in a popup (read-only)"
+                disabled={gmail.status === "filled"}
+                onClick={() => {
+                  void getBrain().onLinkOpen("menu:gmail", connectUrl(sessionId));
                   setOpen(false);
                 }}
               />

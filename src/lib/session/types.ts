@@ -76,10 +76,33 @@ export interface ImageAttachment {
   height?: number;
 }
 
+/** A shared contact (vCard). iMessage renders it as a tappable card. */
+export interface ContactCard {
+  name: string;
+  org?: string;
+  note?: string;
+}
+
+/** An audio message (voicemail-style), with the iOS transcription underneath. */
+export interface AudioMessage {
+  durationSec: number;
+  transcript?: string;
+  src?: string;
+}
+
+/** A call log entry inline in the thread ("Call ended · 1:24", "Missed call"). */
+export interface CallLogEntry {
+  reason: string;
+  durationMs?: number;
+}
+
 export type MessageContent =
   | { kind: "text"; text: string; effect?: BubbleEffect }
   | { kind: "link"; link: LinkPreview }
-  | { kind: "image"; image: ImageAttachment };
+  | { kind: "image"; image: ImageAttachment }
+  | { kind: "contact"; contact: ContactCard }
+  | { kind: "audio"; audio: AudioMessage }
+  | { kind: "call"; call: CallLogEntry };
 
 /** iMessage tapbacks: the six classic glyphs, or any emoji (iOS 18+). */
 export type Tapback = "heart" | "thumbsUp" | "thumbsDown" | "haha" | "exclaim" | "question";
@@ -101,9 +124,11 @@ export interface ChatMessage {
   role: MessageRole;
   ts: number;
   content: MessageContent;
-  status?: "sending" | "delivered" | "read";
+  status?: "sending" | "delivered" | "read" | "failed";
   /** when the other side read it (shown as "Read 6:21 PM") */
   readAt?: number;
+  /** server row id once the backend has stored it */
+  serverId?: number;
   reactions?: Reaction[];
   /** inline reply: id of the message this one answers */
   replyToId?: string;
@@ -111,6 +136,7 @@ export interface ChatMessage {
 
 /** Plain-text rendering of any content, for quotes, transcripts and copy. */
 export function messageText(m: Pick<ChatMessage, "content">): string {
+  if (!m.content) return "";
   switch (m.content.kind) {
     case "text":
       return m.content.text;
@@ -118,6 +144,31 @@ export function messageText(m: Pick<ChatMessage, "content">): string {
       return m.content.link.url;
     case "image":
       return m.content.image.alt ?? "Image";
+    case "contact":
+      return `Contact: ${m.content.contact.name}`;
+    case "audio":
+      return m.content.audio.transcript ? `Audio message: ${m.content.audio.transcript}` : "Audio message";
+    case "call":
+      return callLogLabel(m.content.call);
+  }
+}
+
+/** iOS wording for call rows in the thread. */
+export function callLogLabel(c: CallLogEntry): string {
+  const dur = c.durationMs && c.durationMs > 0 ? ` · ${Math.floor(c.durationMs / 60000)}:${String(Math.floor((c.durationMs % 60000) / 1000)).padStart(2, "0")}` : "";
+  switch (c.reason) {
+    case "declined":
+      return "Declined call";
+    case "dropped":
+      return "Call dropped";
+    case "silence":
+      return `Call ended${dur}`;
+    case "mic_denied":
+      return "Call failed";
+    case "missed":
+      return "Missed call";
+    default:
+      return `Call ended${dur}`;
   }
 }
 

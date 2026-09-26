@@ -1,17 +1,20 @@
 "use client";
 
-import { ArrowUpRight, PhoneIncoming, PhoneOff, Send, Trash2, Unplug } from "lucide-react";
+import { ArrowUpRight, Pencil, PhoneIncoming, PhoneOff, Send, Trash2, Unplug } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { callController } from "@/lib/call/controller";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
-import { SLOT_LABELS, SLOT_ORDER, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
+import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
+import type { BeliefStatus } from "@/lib/shared/types";
 import { cn, formatDuration } from "@/lib/utils";
 import { useHydrated } from "@/components/Simulator";
 import { SlotChips } from "@/components/progress/SlotChips";
+import { editSlot } from "@/components/progress/slotEdit";
 import { Button, Card, KV, Pill, fmtDateTime, fmtTime } from "./ui";
+import { useBrainView } from "./useBrainView";
 
 const SLOT_TONE: Record<SlotStatus, "neutral" | "green" | "amber" | "red" | "blue" | "violet"> = {
   empty: "neutral",
@@ -28,6 +31,7 @@ const SLOT_TONE: Record<SlotStatus, "neutral" | "green" | "amber" | "red" | "blu
  */
 export function BehindTheScenes() {
   useCrossTabSync();
+  useBrainView();
   const hydrated = useHydrated();
   const s = useSessionStore();
 
@@ -42,6 +46,7 @@ export function BehindTheScenes() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="flex flex-col gap-5 lg:col-span-2">
             <SlotTracker />
+            <BrainCard />
             <Transcript />
             <EventLog />
           </div>
@@ -59,6 +64,7 @@ export function BehindTheScenes() {
 }
 
 function TopBar() {
+  const connection = useSessionStore((st) => st.connection);
   return (
     <div className="sticky top-0 z-20 border-b border-black/[0.06] bg-[#fafafa]/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6">
@@ -69,8 +75,8 @@ function TopBar() {
         </div>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5 text-[12px] text-black/55">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            live · synced with the phone
+            <span className={cn("h-1.5 w-1.5 rounded-full", connection === "realtime" ? "animate-pulse bg-emerald-500" : connection === "polling" ? "bg-amber-400" : "bg-rose-500")} />
+            {connection === "realtime" ? "live · Supabase Realtime" : connection === "polling" ? "live · polling" : "offline · cached"}
           </span>
           <Link href="/" className="flex items-center gap-1 text-[13px] font-medium hover:underline">
             Open simulator <ArrowUpRight className="h-3.5 w-3.5" />
@@ -99,7 +105,7 @@ function Hero() {
         Started {fmtDateTime(createdAt)} · currently on <span className="font-medium text-black/80">{channel}</span>. Everything below updates as the phone moves.
       </p>
       <div className="mt-5">
-        <SlotChips slots={slots} />
+        <SlotChips slots={slots} editable />
       </div>
     </div>
   );
@@ -107,10 +113,9 @@ function Hero() {
 
 function SlotTracker() {
   const slots = useSessionStore((st) => st.slots);
-  const setSlot = useSessionStore((st) => st.setSlot);
-  const statuses: SlotStatus[] = ["empty", "pending", "filled", "skipped", "declined", "failed"];
+  const confirmed = useSessionStore((st) => st.userNameConfirmed);
   return (
-    <Card title="Slot tracker" subtitle="The four things onboarding collects. Editable here so you can drive state until the brain exists.">
+    <Card title="Slot tracker" subtitle="The four things onboarding collects. The server owns these; editing goes through the same validated set_slot tool the model uses.">
       <table className="w-full text-[13.5px]">
         <thead className="text-left text-[11px] uppercase tracking-wider text-black/40">
           <tr>
@@ -130,33 +135,14 @@ function SlotTracker() {
                   <div className="font-mono text-[11px] text-black/40">{key}</div>
                 </td>
                 <td className="py-2.5 pr-4">
-                  <input
-                    value={slot.value ?? ""}
-                    placeholder="—"
-                    onChange={(e) =>
-                      setSlot(key, {
-                        value: e.target.value || undefined,
-                        status: e.target.value ? "filled" : slot.status === "filled" ? "empty" : slot.status,
-                      })
-                    }
-                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 -mx-2 hover:border-black/10 focus:border-black/20 focus:bg-white focus:outline-none"
-                  />
+                  <button onClick={() => void editSlot(key)} className="group -mx-2 flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-black/[0.04]" title="Edit via set_slot">
+                    <span className={cn(!slot.value && "text-black/35")}>{slot.value ?? "—"}</span>
+                    {key === "user_name" && confirmed && <Pill tone="green">confirmed</Pill>}
+                    <Pencil className="h-3 w-3 text-black/30 opacity-0 transition group-hover:opacity-100" />
+                  </button>
                 </td>
                 <td className="py-2.5 pr-4">
-                  <select
-                    value={slot.status}
-                    onChange={(e) => setSlot(key, { status: e.target.value as SlotStatus })}
-                    className={cn("rounded-full border-0 px-2 py-0.5 font-mono text-[11px] outline-none", {
-                      "bg-black/[0.06] text-black/70": SLOT_TONE[slot.status] === "neutral",
-                      "bg-emerald-50 text-emerald-700": SLOT_TONE[slot.status] === "green",
-                      "bg-amber-50 text-amber-800": SLOT_TONE[slot.status] === "amber",
-                      "bg-rose-50 text-rose-700": SLOT_TONE[slot.status] === "red",
-                    })}
-                  >
-                    {statuses.map((st) => (
-                      <option key={st}>{st}</option>
-                    ))}
-                  </select>
+                  <Pill tone={SLOT_TONE[slot.status]}>{slot.status}</Pill>
                 </td>
                 <td className="py-2.5 text-right font-mono text-[11px] text-black/45">{slot.updatedAt ? fmtTime(slot.updatedAt) : "—"}</td>
               </tr>
@@ -168,12 +154,92 @@ function SlotTracker() {
   );
 }
 
+const BELIEF_TONE: Record<BeliefStatus, "neutral" | "green" | "amber" | "red" | "blue" | "violet"> = {
+  active: "green",
+  superseded: "neutral",
+  contradicted: "red",
+  pending: "amber",
+  quarantined: "red",
+  retracted: "neutral",
+};
+
+function BrainCard() {
+  const beliefs = useSessionStore((st) => st.beliefs);
+  const nextBestAsk = useSessionStore((st) => st.nextBestAsk);
+  const latency = useSessionStore((st) => st.latency);
+  const connection = useSessionStore((st) => st.connection);
+  const mode = useSessionStore((st) => st.mode);
+  const promptVersion = useSessionStore((st) => st.promptVersion);
+  const sorted = useMemo(() => [...beliefs].sort((a, b) => (a.status === "active" ? -1 : 1) - (b.status === "active" ? -1 : 1) || a.predicate.localeCompare(b.predicate)), [beliefs]);
+  return (
+    <Card
+      title="Brain"
+      subtitle="Memory ledger projection, what the server wants to ask next, and voice latency. Nothing here is stored in the model."
+      right={<Pill tone={mode === "main" ? "blue" : "amber"}>mode: {mode}</Pill>}
+    >
+      <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
+        <KV label="next best ask">
+          <span className="font-mono text-[12px]">{nextBestAsk ? (nextBestAsk.slot ?? "none") : "—"}</span>
+        </KV>
+        <KV label="latency p50 / p95">
+          <span className="font-mono text-[12px]">
+            {latency && latency.n > 0 ? `${latency.p50 ?? "—"} / ${latency.p95 ?? "—"} ms · n=${latency.n}` : "no voice turns yet"}
+          </span>
+        </KV>
+        <KV label="connection"><Pill tone={connection === "realtime" ? "green" : connection === "polling" ? "amber" : "red"}>{connection}</Pill></KV>
+        <KV label="prompt version"><span className="font-mono text-[12px]">{promptVersion ?? "—"}</span></KV>
+      </div>
+      {nextBestAsk?.hint && <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-[12.5px] text-black/60">{nextBestAsk.hint}</p>}
+
+      <div className="mt-4">
+        <div className="mb-1.5 text-[11px] uppercase tracking-wider text-black/40">Beliefs ({beliefs.length})</div>
+        {sorted.length === 0 ? (
+          <Empty>No beliefs yet. Say your name, or connect Gmail.</Empty>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-black/[0.06]">
+            <table className="w-full text-[12.5px]">
+              <thead className="bg-black/[0.02] text-left text-[11px] uppercase tracking-wider text-black/40">
+                <tr>
+                  <th className="px-3 py-1.5 font-medium">subject · predicate</th>
+                  <th className="px-3 py-1.5 font-medium">object</th>
+                  <th className="px-3 py-1.5 font-medium">confidence</th>
+                  <th className="px-3 py-1.5 font-medium">status</th>
+                  <th className="px-3 py-1.5 font-medium">reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/[0.05]">
+                {sorted.map((b) => (
+                  <tr key={`${b.subject}|${b.predicate}|${b.object}`} className={cn("align-top", b.status !== "active" && "text-black/50")}>
+                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[11.5px]">{b.subject} · {b.predicate}</td>
+                    <td className="px-3 py-1.5 break-all">{b.object}</td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-black/[0.06]">
+                          <span className={cn("block h-full rounded-full", b.status === "active" ? "bg-emerald-500" : "bg-black/25")} style={{ width: `${Math.round(Math.max(0, Math.min(1, b.confidence)) * 100)}%` }} />
+                        </span>
+                        <span className="font-mono text-[11px] text-black/50">{b.confidence.toFixed(2)}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5"><Pill tone={BELIEF_TONE[b.status] ?? "neutral"}>{b.status}</Pill></td>
+                    <td className="px-3 py-1.5 text-[12px] text-black/55">{b.reason ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function SessionCard() {
   const s = useSessionStore();
   return (
     <Card title="Session">
       <div className="grid grid-cols-2 gap-x-4 gap-y-4">
         <KV label="phase"><Pill tone="blue">{s.phase}</Pill></KV>
+        <KV label="mode"><Pill tone={s.mode === "main" ? "blue" : "amber"}>{s.mode}</Pill></KV>
         <KV label="channel"><Pill>{s.channel}</Pill></KV>
         <KV label="screen"><Pill>{s.screen}</Pill></KV>
         <KV label="assistant typing"><Pill tone={s.assistantTyping ? "violet" : "neutral"}>{String(s.assistantTyping)}</Pill></KV>
@@ -275,12 +341,12 @@ function Transcript() {
   const messages = useSessionStore((st) => st.messages);
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   return (
-    <Card title="Transcript" subtitle={`${messages.length} messages. Content is limited to what a real iMessage sender can put in a thread: text, links, images.`}>
+    <Card title="Transcript" subtitle={`${messages.length} messages. Content is limited to what a real iMessage sender can put in a thread: text, links, images, contacts, audio, call rows.`}>
       {messages.length === 0 ? (
         <Empty>No messages yet.</Empty>
       ) : (
         <div className="divide-y divide-black/[0.06]">
-          {messages.map((m) => (
+          {messages.filter((m) => !!m.content).map((m) => (
             <div key={m.id} className="flex gap-4 py-2.5 text-[13.5px]">
               <span className="w-[62px] shrink-0 pt-0.5 font-mono text-[11px] text-black/40">{fmtTime(m.ts)}</span>
               <Pill tone={m.role === "user" ? "blue" : m.role === "assistant" ? "neutral" : "violet"} className="h-fit shrink-0">
@@ -301,6 +367,14 @@ function Transcript() {
                   </div>
                 )}
                 {m.content.kind === "image" && <div className="text-black/60">🖼 {m.content.image.alt ?? "image"}</div>}
+                {m.content.kind === "contact" && <div>👤 Contact card · {m.content.contact.name}{m.content.contact.org ? ` · ${m.content.contact.org}` : ""}</div>}
+                {m.content.kind === "audio" && (
+                  <div>
+                    🎙 Audio message · {m.content.audio.durationSec}s
+                    {m.content.audio.transcript && <div className="mt-0.5 text-[12px] text-black/55">“{m.content.audio.transcript}”</div>}
+                  </div>
+                )}
+                {m.content.kind === "call" && <div className="text-black/60">📞 {callLogLabel(m.content.call)}</div>}
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <Pill tone="violet">{m.content.kind}{m.content.kind === "text" && m.content.effect ? ` · ${m.content.effect}` : ""}</Pill>
                   {m.status && <Pill>{m.status}{m.readAt ? ` ${fmtTime(m.readAt)}` : ""}</Pill>}
@@ -319,7 +393,7 @@ function Transcript() {
   );
 }
 
-const FILTERS = ["all", "call.", "user.", "mock.", "slot.", "reaction.", "channel.", "phase."] as const;
+const FILTERS = ["all", "call.", "user.", "brain.", "server.", "gmail.", "slot.", "reaction.", "channel.", "phase.", "voice.", "mock."] as const;
 
 function EventLog() {
   const events = useSessionStore((st) => st.events);
@@ -364,6 +438,9 @@ function EventLog() {
                         e.type.startsWith("mock.") && "text-violet-700",
                         e.type.startsWith("slot.") && "text-amber-700",
                         e.type.startsWith("reaction.") && "text-pink-700",
+                        e.type.startsWith("brain.") && "text-indigo-700",
+                        e.type.startsWith("server.") && "text-rose-700",
+                        e.type.startsWith("gmail.") && "text-teal-700",
                       )}
                     >
                       {e.type}
@@ -429,18 +506,18 @@ function RunsCard() {
 
 function StorageCard() {
   return (
-    <Card title="Storage" subtitle="Where this lives today, and what's still open.">
+    <Card title="Storage" subtitle="Where this lives and how it gets here.">
       <ul className="space-y-2 text-[13px] text-black/70">
         <li>
-          <span className="font-medium text-black">Now:</span> browser <code className="rounded bg-black/[0.05] px-1 py-0.5 font-mono text-[11.5px]">localStorage</code> key{" "}
-          <code className="rounded bg-black/[0.05] px-1 py-0.5 font-mono text-[11.5px]">{SESSION_STORAGE_KEY}</code>. Tabs sync through the browser&apos;s storage event.
+          <span className="font-medium text-black">Source of truth:</span> Supabase Postgres (<code className="font-mono text-[11.5px]">sessions</code>, <code className="font-mono text-[11.5px]">messages</code>,{" "}
+          <code className="font-mono text-[11.5px]">events</code>, <code className="font-mono text-[11.5px]">memory_events</code> → <code className="font-mono text-[11.5px]">beliefs</code>). Only route handlers write.
         </li>
         <li>
-          <span className="font-medium text-black">Shape:</span> one <code className="font-mono text-[11.5px]">Session</code> row (slots, phase, channel, call) plus append-only <code className="font-mono text-[11.5px]">messages</code> and{" "}
-          <code className="font-mono text-[11.5px]">events</code>.
+          <span className="font-medium text-black">This browser:</span> a mirror fed by Supabase Realtime (anonymous auth + RLS) with catch-up polling as the fallback, cached in{" "}
+          <code className="rounded bg-black/[0.05] px-1 py-0.5 font-mono text-[11.5px]">{SESSION_STORAGE_KEY}</code> so reloads are instant. Tabs sync through the storage event.
         </li>
         <li>
-          <span className="font-medium text-black">Undecided:</span> the server store (Postgres vs Redis vs hosted). The store API is the contract; this page reads only from it.
+          <span className="font-medium text-black">The model:</span> keeps nothing. State is re-injected every turn and only changes through validated tools.
         </li>
       </ul>
     </Card>

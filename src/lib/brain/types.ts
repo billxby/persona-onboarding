@@ -22,4 +22,8 @@ export interface OnboardingBrain {
   onCallEnded(reason: CallEndReason): Promise<void>;
   /** A final user speech transcript arrived from the voice transport. */
   onUserSpeechFinal(text: string): Promise<void>;
+  /** Gmail was connected/declined outside the thread (demo inbox toggle, popup callback). */
+  notifyGmail?(status: "connected" | "declined", email?: string): void;
+  /** Pull the latest server state now (after an out-of-band change such as a chip edit). */
+  refresh?(): Promise<void>;
 }
