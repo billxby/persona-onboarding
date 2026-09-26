@@ -27,10 +27,10 @@ function loadContent(): ClipContent {
 
 export const metadata: Metadata = {
   title: "Meet your Persona",
-  description: "What your Persona does, the Persona Band wristband, the products, and how the first five minutes go.",
+  description: "What your Persona can do for you in Messages, then the Persona Band, the products, and how the first five minutes go.",
   openGraph: {
     title: "Meet your Persona",
-    description: "What it does, the wristband, and how to get the full experience.",
+    description: "What it can do for you in Messages, then the wristband and the full experience.",
     images: ["/clip/og.png"],
   },
   other: {

@@ -1,4 +1,6 @@
 import { generateText } from "ai";
+import { builtinForSlot } from "@/lib/memory/intentions";
+import { completeIntention, deferIntention, dropIntention, mindFor, openIntention, recordNudge, recordOutcome, settleIfOpen } from "@/lib/memory/mind";
 import { appendMemoryEvent, assertFact, explainBelief, projectBeliefs, retractFact } from "@/lib/memory/store";
 import { gmailFor } from "@/lib/server/gmail/client";
 import { markGmail } from "@/lib/server/gmail/oauth";
@@ -6,7 +8,7 @@ import { env } from "@/lib/server/env";
 import { insertEvent, insertMessage, listEvents, listMessages } from "@/lib/server/messages";
 import { fastModel } from "@/lib/server/providers";
 import { patchSession } from "@/lib/server/session";
-import { asks, nextBestAsk } from "@/lib/server/state";
+import { asks, nextBestAsk, turnOf } from "@/lib/server/state";
 import { contentTokens, isMoodInference, validateName, validateNeed } from "@/lib/server/validators";
 import type { MemorySource, MessageRow, ServerChannel, SessionRow, SlotName, StateSummary, ToolResult } from "@/lib/shared/types";
 import { stateSummary } from "@/lib/shared/types";
@@ -69,6 +71,16 @@ const short = (s: string | null | undefined, n: number) => {
   return v.length > n ? `${v.slice(0, n - 1)}…` : v;
 };
 const nowIso = () => new Date().toISOString();
+/** The assistant turn being produced right now (sessions.turn counts finished turns). */
+const turnInProgress = (s: SessionRow) => turnOf(s) + 1;
+/** Mind writes never fail a tool call. */
+const quietly = async (what: string, p: Promise<unknown>) => {
+  try {
+    await p;
+  } catch (e) {
+    console.warn(`[tools] mind: ${what} failed:`, e instanceof Error ? e.message : e);
+  }
+};
 
 // ---------------------------------------------------------------------------
 // provenance: values that only exist inside email content never set a slot (CaMeL-style)
@@ -118,6 +130,9 @@ const setSlot: Handler = async (ctx, input, effects) => {
     } else {
       session = await patchSession(session.id, (s) => ({ attempts: { ...(s.attempts ?? {}), [slot]: Math.max(asks(s, slot), 3) }, phase: s.phase === "warmup" ? "collecting" : s.phase }));
       await insertEvent(session.id, "slot_skipped", { slot, via: "verbal", channel: ctx.channel });
+      // a skip is a clear no for now: the intention backs off hard but stays on the mind
+      const b = builtinForSlot(slot);
+      if (b) await quietly("skip outcome", recordOutcome(session.id, { key: b.key, receptivity: 1, signal: "declined", note: "asked to skip it", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${ctx.channel}` }));
     }
     effects.instructions_changed = true;
     const placeholder = slot === "user_name" ? "friend" : slot === "agent_name" ? "Persona" : null;
@@ -171,6 +186,8 @@ const setSlot: Handler = async (ctx, input, effects) => {
   await insertEvent(session.id, "slot_set", { slot, value, previous: old ?? null, channel: ctx.channel, ...(volunteeredOnCall ? { volunteered_on_call: true } : {}) });
   await assertFact(session.id, { predicate: slot, object: value, source, actor: "user", evidence_ref: `tool:set_slot:${ctx.channel}` });
   effects.instructions_changed = true;
+  const b = builtinForSlot(slot);
+  if (b) await quietly("settle", settleIfOpen(session.id, { key: b.key, reason: `${slot} set${old && old !== value ? " (changed)" : ""}`, turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${ctx.channel}` }));
 
   if (slot === "agent_name") {
     const card = await insertMessage({
@@ -222,6 +239,7 @@ const requestGmailConnect: Handler = async (ctx, _input, effects) => {
   effects.messages.push(card);
   session = await patchSession(session.id, (s) => ({ gmail_status: "pending", phase: s.phase === "warmup" ? "collecting" : s.phase }));
   await insertEvent(session.id, "oauth_started", { via: "tool", channel: ctx.channel });
+  await quietly("gmail nudge", recordNudge(session.id, { key: "connect_gmail", approach: "sent the Connect Gmail link card", channel: ctx.channel, turn: turnInProgress(session), actor: "agent", evidence_ref: `tool:request_gmail_connect:${ctx.channel}` }));
   effects.instructions_changed = true;
   return { session, ok: true, data: { sent: true }, note: "link is in the chat; wait, don't re-ask" };
 };
@@ -362,6 +380,55 @@ const explain: Handler = async (ctx, input) => {
   return { session: ctx.session, ok: true, data: { evidence: json.length > 700 ? short(json, 700) : chain } };
 };
 
+/** The agent's own mind: open / outcome / defer / done / drop (DESIGN §13b). Built-ins never drop. */
+const intention: Handler = async (ctx, input) => {
+  const session = ctx.session;
+  const op = String(input.op);
+  const key = String(input.key).toLowerCase().replace(/-/g, "_");
+  const turn = turnInProgress(session);
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  const base = { key, turn, actor: "agent" as const, evidence_ref: `tool:intention:${ctx.channel}` };
+  if (note && isMoodInference(note)) return { session, ok: false, error: "notes record what they said or did, never mood or personality" };
+  const current = (await mindFor(session.id)).find((r) => r.key === key);
+  switch (op) {
+    case "open": {
+      const goal = typeof input.goal === "string" ? input.goal.trim() : "";
+      if (!goal && !current) return { session, ok: false, error: "open needs a goal", ask_again: true };
+      if (current && (current.status === "open" || current.status === "asked")) return { session, ok: true, note: `already on my mind (${current.status})` };
+      await openIntention(session.id, { ...base, goal: goal || undefined, sticky: false, priority: 5 });
+      return { session, ok: true, note: "on my mind" };
+    }
+    case "outcome": {
+      if (!current) return { session, ok: false, error: `nothing on my mind under "${key}"; open it first` };
+      const r = Number(input.receptivity);
+      if (!Number.isFinite(r)) return { session, ok: false, error: "outcome needs receptivity 0–10", ask_again: true };
+      const rows = await recordOutcome(session.id, { ...base, receptivity: Math.round(r), note: note || undefined });
+      const after = rows.find((x) => x.key === key);
+      return { session, ok: true, note: after ? `${after.status}${after.status === "open" ? `, eligible again at turn ${after.next_eligible_turn}` : ""}` : "noted" };
+    }
+    case "defer": {
+      if (!current) return { session, ok: false, error: `nothing on my mind under "${key}"` };
+      const turns = Number(input.turns);
+      await deferIntention(session.id, { ...base, turns: Number.isFinite(turns) && turns > 0 ? Math.round(turns) : 6, reason: note || undefined });
+      return { session, ok: true, note: "snoozed" };
+    }
+    case "done": {
+      if (!current) return { session, ok: false, error: `nothing on my mind under "${key}"` };
+      await completeIntention(session.id, { ...base, reason: note || undefined });
+      return { session, ok: true, note: "done, off my mind" };
+    }
+    case "drop": {
+      if (!current) return { session, ok: false, error: `nothing on my mind under "${key}"` };
+      // the ledger refuses to drop a core ask (sticky): it comes back as a long snooze
+      const rows = await dropIntention(session.id, { ...base, reason: note || undefined });
+      const after = rows.find((x) => x.key === key);
+      return { session, ok: true, note: after?.status === "dropped" ? "dropped" : `${key} is a core ask and stays on my mind; snoozed until turn ${after?.next_eligible_turn ?? "?"} instead` };
+    }
+    default:
+      return { session, ok: false, error: `unknown op ${op}` };
+  }
+};
+
 const graduate: Handler = async (ctx, input, effects) => {
   let session = ctx.session;
   const reason = String(input.reason);
@@ -421,14 +488,11 @@ const endCall: Handler = async (ctx, input, effects) => {
   return { session, ok: true, note: "call is ending; the chat continues" };
 };
 
-/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session, both channels. */
-const sendAppClip: Handler = async (ctx, input, effects) => {
-  const session = ctx.session;
-  const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
-  if (already) return { session, ok: false, error: "already sent; the card is in the chat, point them to it" };
-  const url = clipUrl(env.APP_URL, session.id);
+/** Insert the "Meet your Persona" App Clip link card into the thread and log that it was shown. */
+export async function insertAppClipCard(session_id: string, via: "tool" | "opener" | "first_reply", extra: Record<string, unknown> = {}): Promise<MessageRow> {
+  const url = clipUrl(env.APP_URL, session_id);
   const card = await insertMessage({
-    session_id: session.id,
+    session_id,
     role: "assistant",
     kind: "link_card",
     channel: "text",
@@ -442,8 +506,16 @@ const sendAppClip: Handler = async (ctx, input, effects) => {
       app_clip: { ...APP_CLIP_CARD },
     },
   });
-  effects.messages.push(card);
-  await insertEvent(session.id, "app_clip_card_shown", { via: "tool", channel: ctx.channel, reason: short(String(input.reason ?? ""), 120) });
+  await insertEvent(session_id, "app_clip_card_shown", { via, ...extra });
+  return card;
+}
+
+/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session from the model, both channels. The opener sends it too. */
+const sendAppClip: Handler = async (ctx, input, effects) => {
+  const session = ctx.session;
+  const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
+  if (already) return { session, ok: false, error: "already sent; the card is in the chat, point them to it" };
+  effects.messages.push(await insertAppClipCard(session.id, "tool", { channel: ctx.channel, reason: short(String(input.reason ?? ""), 120) }));
   return { session, ok: true, data: { sent: true }, note: "card is in the chat; tell them to tap it" };
 };
 
@@ -457,6 +529,7 @@ const HANDLERS: Record<ToolName, Handler> = {
   remember,
   forget,
   explain,
+  intention,
   graduate,
   switch_channel: switchChannel,
   end_call: endCall,
@@ -470,15 +543,17 @@ const HANDLERS: Record<ToolName, Handler> = {
 export async function runTool(ctx: ToolContext, name: string, rawInput: unknown): Promise<ToolRun> {
   const started = Date.now();
   const effects: ToolEffects = { messages: [], instructions_changed: false };
-  const build = (session: SessionRow, out: Omit<HandlerOut, "session">): ToolRun => {
+  const build = async (session: SessionRow, out: Omit<HandlerOut, "session">): Promise<ToolRun> => {
     const data = out.note ? { ...(out.data ?? {}), note: out.note } : out.data;
+    // next_best_ask is receptivity-aware: read the mind after the handler ran (it may have moved)
+    const mind = await mindFor(session.id).catch(() => undefined);
     const result: ToolResult = {
       ok: out.ok,
       ...(out.error ? { error: out.error } : {}),
       ...(out.ask_again ? { ask_again: true } : {}),
       ...(data && Object.keys(data).length ? { data } : {}),
       state: stateSummary(session),
-      next_best_ask: nextBestAsk(session, ctx.channel),
+      next_best_ask: nextBestAsk(session, ctx.channel, mind),
     };
     return { result, session, effects };
   };
@@ -495,28 +570,28 @@ export async function runTool(ctx: ToolContext, name: string, rawInput: unknown)
 
   if (!isToolName(name)) {
     await log(false, { error: "unknown tool" });
-    return build(ctx.session, { ok: false, error: `unknown tool ${name}`, ask_again: true });
+    return await build(ctx.session, { ok: false, error: `unknown tool ${name}`, ask_again: true });
   }
   const def = TOOL_DEFS[name];
   if (!def.channels.includes(ctx.channel)) {
     await log(false, { error: "wrong channel" });
-    return build(ctx.session, { ok: false, error: `${name} is not available on the ${ctx.channel} channel` });
+    return await build(ctx.session, { ok: false, error: `${name} is not available on the ${ctx.channel} channel` });
   }
   const parsed = def.input.safeParse(rawInput && typeof rawInput === "object" ? rawInput : {});
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ");
     await log(false, { error: issues });
-    return build(ctx.session, { ok: false, error: `invalid input: ${issues}`, ask_again: true });
+    return await build(ctx.session, { ok: false, error: `invalid input: ${issues}`, ask_again: true });
   }
   try {
     const out = await HANDLERS[name](ctx, parsed.data as Record<string, unknown>, effects);
     await log(out.ok, out.error ? { error: out.error } : {});
-    return build(out.session, out);
+    return await build(out.session, out);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`[tools] ${name} failed:`, message);
     await log(false, { error: message });
-    return build(ctx.session, { ok: false, error: `${name} failed: ${short(message, 120)}`, ask_again: true });
+    return await build(ctx.session, { ok: false, error: `${name} failed: ${short(message, 120)}`, ask_again: true });
   }
 }
 

@@ -10,6 +10,7 @@ import type {
   SessionRow,
   SessionView,
 } from "@/lib/shared/types";
+import { mindFor } from "@/lib/memory/mind";
 import { db, isUniqueViolation } from "./db";
 import { getSession } from "./session";
 import { nextBestAsk } from "./state";
@@ -167,12 +168,13 @@ export async function sessionView(session_id: string, opts: { afterId?: number }
   let session = await getSession(session_id);
   if (!session) return null;
   session = await detectDrop(session);
-  const [messages, beliefs, latency] = await Promise.all([listMessages(session_id, { afterId: opts.afterId }), allBeliefs(session_id), latencyStats(session_id)]);
+  const [messages, beliefs, intentions, latency] = await Promise.all([listMessages(session_id, { afterId: opts.afterId }), allBeliefs(session_id), mindFor(session_id), latencyStats(session_id)]);
   return {
     session,
     messages,
     beliefs,
-    next_best_ask: nextBestAsk(session, session.call_state === "live" ? "call" : "text"),
+    intentions,
+    next_best_ask: nextBestAsk(session, session.call_state === "live" ? "call" : "text", intentions),
     latency,
     realtime: !!session.owner_uid,
     now: new Date().toISOString(),

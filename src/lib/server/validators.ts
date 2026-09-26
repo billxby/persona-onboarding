@@ -30,6 +30,20 @@ export const rememberInput = z.object({
   source: z.enum(["user_text", "user_call", "agent_inference"]),
 });
 export const forgetInput = z.object({ subject: z.string().min(1).max(60), predicate: z.string().min(1).max(80) });
+/** intention(op, key, ...): the agent's own reminders. Nullable fields keep the Realtime strict schema happy. */
+export const intentionInput = z.object({
+  op: z.enum(["open", "outcome", "defer", "done", "drop"]).describe("open: track something to do or raise later · outcome: how they took what you raised · defer: snooze · done: it happened · drop: stop pursuing (not for the built-ins)"),
+  key: z
+    .string()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z][a-z0-9_-]*$/i, "snake_case key, e.g. followup_landlord")
+    .describe("get_name | learn_need | connect_gmail | name_agent, or your own like followup_landlord"),
+  goal: z.string().max(140).nullable().describe("open: what you want to do or bring up, one line; else null"),
+  receptivity: z.number().int().min(0).max(10).nullable().describe("outcome: 0 shut it down … 10 yes; else null"),
+  note: z.string().max(160).nullable().describe("outcome: what they said or did, under 15 words · done/drop/defer: why; else null"),
+  turns: z.number().int().min(1).max(200).nullable().describe("defer: how many of your turns to wait; else null"),
+});
 export const explainInput = z.object({ subject: z.string().min(1).max(60), predicate: z.string().min(1).max(80) });
 export const graduateInput = z.object({ reason: z.string().min(1).max(200).describe("Why now: value delivered | user wants to get going | skip all") });
 export const switchChannelInput = z.object({ to: z.enum(["call", "text"]) });

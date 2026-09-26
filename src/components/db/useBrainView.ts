@@ -27,6 +27,7 @@ export function useBrainView(intervalMs = 3000) {
               applySessionRow(view.session);
               useSessionStore.getState().setBrainView({
                 beliefs: view.beliefs,
+                intentions: view.intentions ?? [],
                 nextBestAsk: view.next_best_ask,
                 latency: view.latency,
                 promptVersion: view.session.prompt_version ?? null,

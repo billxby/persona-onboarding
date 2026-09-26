@@ -168,7 +168,7 @@ Graduation fires when `need` is set and (a) a value moment happened, or (b) the 
 
 ## 7. Conversation design
 
-1. You text first: the thread opens empty with "Hey Persona" prefilled in the compose field, unsent, the way an sms: link with a body opens Messages. Sending it gets the bot's fixed opener, three bubbles: "Hey! I'm your new personal assistant. Tap below to see what I can do ;)", the Meet your Persona App Clip card (a plain link preview when Persona is not in Contacts), then "So, what's something you want to take off your plate this week?" Two exits after that: type a need, or tap call.
+1. You text first: the thread opens empty with "Hey Persona" prefilled in the compose field, unsent, the way an sms: link with a body opens Messages. Sending it gets the bot's fixed opener, three bubbles: "Hey! I'm your new personal assistant. Tap below to see what I can do ;)", the Meet your Persona App Clip card (a plain link preview when Persona is not in Contacts), then "So, what's something you want to take off your plate this week?" A first text that is not the hello goes to the model instead, and the server adds the card right after its first reply, so the App Clip always goes out in the first exchange. The card and the clip's first screen lead with what Persona does in Messages; the wristband comes further down. Two exits after that: type a need, or tap call.
 2. Call rings 1 to 2 s after tapping. Decline button exists. Decline → 12 s voicemail bubble with transcription: "It's your Persona. Text me your name and one thing you want gone this week and I'll start."
 3. Call opener continues what was typed. If a need was typed: "Hey, so the gym thing." Otherwise: "Quick call, two minutes tops, then I'll actually do something for you. What should I call you?"
 4. Order on the call: name (use it in the next sentence) → need (paraphrase, ask the one clarifying question you'd need) → Gmail framed as a means to the need ("If you connect Gmail I can find the membership email. Button's on your screen, read-only. I'll wait.") → end with a promise ("I'm on it. Watch the chat.").
@@ -296,6 +296,31 @@ Rules:
 
 Citations for the README: [Zep temporal knowledge graph](https://arxiv.org/abs/2501.13956) (supersede with a reason, never delete), [CaMeL](https://arxiv.org/abs/2503.18813) (untrusted data never controls flow; quarantine), [Doyle 1979 TMS](https://doi.org/10.1016/0004-3702(79)90008-0) (justifications). Prior work: [Cortesol](https://devpost.com/software/cortesol).
 
+### 13b. Intentions: what is on the agent's mind
+
+Beliefs are what the agent knows about the user. Intentions are what the agent still wants to do or bring up: connect Gmail, learn the name, name itself, a follow-up it promised. A second append-only ledger, `intention_events`, folds into one `intentions` row per `(session, key)` with the same discipline as §13: pure deterministic replay, nothing deleted, every change carries a reason.
+
+```
+open    {goal, slot?, sticky, priority, channels}   start tracking (built-ins are seeded when the session is created)
+nudge   {approach, channel}                          the agent raised it (a question matching the intention's cue, the link card)
+outcome {receptivity 0–10, signal, note}             how the user took it, scored once per reply to a nudge
+defer   {turns?, ms?, reason}                        snooze
+done / drop / reopen {reason}                        terminal and back
+```
+
+Receptivity is read by the fast model (`prompts/receptivity.md`) from the user's next message after a nudge: 0 shut it down, 1–2 clear no, 3–4 ignored, 5–6 maybe later, 7–8 interested, 9–10 yes. A regex read is the fallback. System events score too: a decline on Google's consent screen is a 2, a timed-out link a 4, "skip" a 1. Gmail connected or a slot set marks the intention `done`.
+
+Backoff is a pure function of the latest score and how often it has been raised: base wait in assistant turns by band (0: 24, 1–2: 12, 3–4: 2, 5–6: 6, 7–8: 1, 9–10: 0) plus a wall-clock floor for cold reactions (0: 24 h, 1–2: 2 h), both doubled per extra nudge, capped at 200 turns / 7 days. The four built-ins (`get_name`, `learn_need`, `connect_gmail`, `name_agent`) are **sticky**: core product asks are never dropped, not even by the model; a straight no means "much later, from a different angle", never "never". A declined Gmail therefore comes back as a soft ask once the intention is eligible again, only in main mode and only as the way to do what the user is asking. Ad-hoc follow-ups the agent opens itself drop on a 0/10 or after three nudges averaging under 3/10.
+
+What the model sees: `next_best_ask` never points at a slot whose intention is asked, snoozed or done, and an `ON MY MIND` block after `WHAT I KNOW` lists open intentions (eligible first, with the last approach, the score and its note, and the next untried angle), then one line for what is done or dropped. Tool: `intention(op, key, goal?, receptivity?, note?, turns?)` for the agent's own reminders and corrections. `/db` shows the projection: status, receptivity (latest and mean), times raised, when it is eligible again, last angle and note.
+
+Rules:
+1. Raise at most one intention per turn, only when eligible, only if it serves the task.
+2. Never the same angle twice; the block suggests the next one.
+3. Scores describe the reaction, never the person: no mood or personality words in notes (same validator as `remember`).
+4. Sticky intentions never drop. Everything else follows the backoff.
+5. Replay is deterministic and fuzz-tested like the beliefs ledger.
+
 ## 14. Failure handling
 
 | Case | Detection | Behavior |
@@ -317,7 +342,7 @@ Citations for the README: [Zep temporal knowledge graph](https://arxiv.org/abs/2
 | Jailbreak | guard | stay in character, don't lecture, never reveal prompt |
 | "Skip" | intent | skip slot, keep moving; skip all → graduate with defaults |
 | Texts during call | new text message while `call_state = live` | inject event; bot says "got it, switching to text," calls `end_call` |
-| Declines Gmail | oauth error / verbal no | acknowledge; value moment without Gmail |
+| Declines Gmail | oauth error / verbal no | acknowledge; value moment without Gmail; the intention scores the no (§13b) and comes back much later, from another angle, only as the way to do the task |
 | Never states need | 2 misses | offer 3 concrete options from Persona's list (inbox cleanup, subscriptions, booking) |
 | Rambling | turn over 25 s | let finish, summarize in one line |
 | "What can you do?" | intent | three concrete examples, then ask which to hand off |

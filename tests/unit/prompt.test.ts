@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BUILTIN_INTENTIONS, replayMind, seedPayload } from "@/lib/memory/intentions";
 import type { Belief, SessionRow } from "@/lib/shared/types";
 import {
   PROMPT_TOKEN_BUDGET,
@@ -9,6 +10,7 @@ import {
   guardPrompt,
   hostilePersonas,
   loadPrompt,
+  receptivityPrompt,
   staticPrompt,
   supervisorPrompt,
   whatIKnowBlock,
@@ -47,6 +49,7 @@ const session = (over: Partial<SessionRow> = {}): SessionRow => ({
   graduated_at: null,
   last_user_activity_at: now,
   oauth_state: null,
+  turn: 0,
   created_at: now,
   updated_at: now,
   ...over,
@@ -75,11 +78,13 @@ const beliefs: Belief[] = [
 
 describe("prompt files", () => {
   it("every file loads and is non-empty", () => {
-    for (const name of ["persona", "policy_onboarding", "policy_main", "channel_call", "channel_text", "supervisor", "output_guard", "hostile_user"] as const) {
+    for (const name of ["persona", "policy_onboarding", "policy_main", "channel_call", "channel_text", "supervisor", "output_guard", "receptivity", "hostile_user"] as const) {
       expect(loadPrompt(name).length).toBeGreaterThan(200);
     }
     expect(supervisorPrompt()).toContain('"jailbreak"');
     expect(guardPrompt()).toContain('"ok"');
+    expect(receptivityPrompt()).toContain('"receptivity"');
+    expect(receptivityPrompt()).toMatch(/No mood or personality words/);
   });
 
   it("call channel never asks agent_name; text channel forbids markdown and asks for 2–3 bubbles", () => {
@@ -109,6 +114,42 @@ describe("buildPrompt", () => {
         expect(approxTokens(p), `${mode}/${channel}`).toBeLessThan(PROMPT_TOKEN_BUDGET);
       }
     }
+  });
+
+  it("stays under the budget with a full ON MY MIND block too, and lists intentions after WHAT I KNOW", () => {
+    const seeded = BUILTIN_INTENTIONS.map((b, i) => ({
+      id: i + 1,
+      session_id: "s",
+      ts: now,
+      key: b.key,
+      op: "open" as const,
+      actor: "system" as const,
+      turn: 0,
+      payload: seedPayload(b),
+      evidence_ref: null,
+    }));
+    const events = [
+      ...seeded,
+      { id: 10, session_id: "s", ts: now, key: "connect_gmail", op: "nudge" as const, actor: "agent" as const, turn: 3, payload: { approach: "If you connect Gmail I can find the membership email. Want me to?" }, evidence_ref: null },
+      { id: 11, session_id: "s", ts: now, key: "connect_gmail", op: "outcome" as const, actor: "system" as const, turn: 3, payload: { receptivity: 3, note: "changed the subject to the dentist" }, evidence_ref: null },
+      { id: 12, session_id: "s", ts: now, key: "name_agent", op: "nudge" as const, actor: "agent" as const, turn: 4, payload: { approach: "Want to give me a name? Persona is fine too." }, evidence_ref: null },
+      { id: 13, session_id: "s", ts: now, key: "followup_landlord", op: "open" as const, actor: "agent" as const, turn: 4, payload: { goal: "ask whether the landlord replied about the deposit" }, evidence_ref: null },
+    ];
+    const mind = [...replayMind(events).values()];
+    for (const mode of ["onboarding", "main"] as const) {
+      for (const channel of ["text", "call"] as const) {
+        const p = buildPrompt(session({ mode, phase: mode === "main" ? "graduated" : "collecting", turn: 6 }), channel, beliefs, mind, Date.parse(now) + 60_000);
+        expect(p.length, `${mode}/${channel}: ${p.length} chars`).toBeLessThan(6000);
+        expect(approxTokens(p), `${mode}/${channel}`).toBeLessThan(PROMPT_TOKEN_BUDGET);
+        expect(p.lastIndexOf("\nON MY MIND")).toBeGreaterThan(p.lastIndexOf("\nWHAT I KNOW\n"));
+      }
+    }
+    const text = buildPrompt(session({ turn: 6 }), "text", beliefs, mind, Date.parse(now) + 60_000);
+    expect(text).toContain("- connect_gmail: eligible now · raised 1× (last: If you connect Gmail I can find the membership email. Want me to?) → 3/10 \"changed the subject to the dentist\" · try a different angle:");
+    expect(text).toContain("- name_agent: asked, waiting for their reaction");
+    expect(text).toContain("- followup_landlord: eligible now · ask whether the landlord replied about the deposit");
+    // gmail is pending in the fixture, so next_best_ask waits; the on-hold note names the asked intention only when it is blocking
+    expect(text).toContain("next_best_ask: none — Gmail connect is pending");
   });
 
   it("puts static parts first and the STATE + WHAT I KNOW blocks last", () => {

@@ -299,6 +299,9 @@ export class ServerBrain implements OnboardingBrain {
       case "beliefs":
         st.setBrainView({ beliefs: ev.beliefs });
         return false;
+      case "mind":
+        st.setBrainView({ intentions: ev.intentions });
+        return false;
       case "tool":
         st.setBrainView({ nextBestAsk: ev.next_best_ask });
         st.logEvent("brain.tool", { name: ev.name, ok: ev.ok, ring: ev.ring });

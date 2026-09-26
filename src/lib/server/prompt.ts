@@ -1,14 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
+import { onMyMindBlock } from "@/lib/memory/intentions";
 import type { Belief, ServerChannel, SessionRow } from "@/lib/shared/types";
-import { stateBlock } from "./state";
+import { stateBlock, turnOf, type MindView } from "./state";
 
 /**
  * Prompt composition (DESIGN.md §9): persona + policy[mode] + channel[channel] + STATE + WHAT I KNOW.
  * Static parts first, dynamic parts last, so the static prefix can be cached by the provider.
  * Files live in prompts/*.md and are read from disk (cached in production).
  */
-export const PROMPT_VERSION = "2026-09-26.1";
+export const PROMPT_VERSION = "2026-09-26.2";
 
 /** Rough budget check: ~4 chars per token. The whole prompt must stay under 1,500 tokens. */
 export const PROMPT_TOKEN_BUDGET = 1500;
@@ -22,6 +23,7 @@ export type PromptName =
   | "channel_text"
   | "supervisor"
   | "output_guard"
+  | "receptivity"
   | "hostile_user";
 
 const cache = new Map<string, string>();
@@ -65,22 +67,27 @@ export function staticPrompt(mode: SessionRow["mode"], channel: ServerChannel): 
 
 /**
  * `static` is identical for every turn of the same mode/channel (cache breakpoint goes here);
- * `dynamic` is the STATE block + WHAT I KNOW, rebuilt every turn.
+ * `dynamic` is the STATE block + WHAT I KNOW + ON MY MIND, rebuilt every turn.
+ * `mind` (the intentions projection) is optional: without it the ON MY MIND block is omitted
+ * and next_best_ask falls back to the attempts counters.
  */
-export function buildPromptParts(session: SessionRow, channel: ServerChannel, beliefs: Belief[]): { static: string; dynamic: string } {
+export function buildPromptParts(session: SessionRow, channel: ServerChannel, beliefs: Belief[], mind?: MindView, now: number = Date.now()): { static: string; dynamic: string } {
+  const blocks = [stateBlock(session, channel, mind, now), whatIKnowBlock(beliefs)];
+  if (mind) blocks.push(onMyMindBlock(mind, channel, turnOf(session), now));
   return {
     static: staticPrompt(session.mode, channel),
-    dynamic: [stateBlock(session, channel), whatIKnowBlock(beliefs)].join("\n\n"),
+    dynamic: blocks.join("\n\n"),
   };
 }
 
-export function buildPrompt(session: SessionRow, channel: ServerChannel, beliefs: Belief[]): string {
-  const parts = buildPromptParts(session, channel, beliefs);
+export function buildPrompt(session: SessionRow, channel: ServerChannel, beliefs: Belief[], mind?: MindView, now: number = Date.now()): string {
+  const parts = buildPromptParts(session, channel, beliefs, mind, now);
   return `${parts.static}\n\n${parts.dynamic}`;
 }
 
 export const supervisorPrompt = () => loadPrompt("supervisor");
 export const guardPrompt = () => loadPrompt("output_guard");
+export const receptivityPrompt = () => loadPrompt("receptivity");
 
 export interface HostilePersona {
   id: string;

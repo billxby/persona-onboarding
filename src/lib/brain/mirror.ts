@@ -143,6 +143,7 @@ export function applyView(view: SessionView): GmailFlip {
   for (const row of view.messages) applyMessageRow(row);
   session.get().setBrainView({
     beliefs: view.beliefs,
+    intentions: view.intentions ?? [],
     nextBestAsk: view.next_best_ask,
     latency: view.latency,
     promptVersion: view.session.prompt_version ?? null,

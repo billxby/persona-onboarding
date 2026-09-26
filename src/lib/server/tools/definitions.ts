@@ -7,6 +7,7 @@ import {
   explainInput,
   forgetInput,
   graduateInput,
+  intentionInput,
   recentEmailsInput,
   rememberInput,
   requestGmailConnectInput,
@@ -30,6 +31,7 @@ export const TOOL_NAMES = [
   "remember",
   "forget",
   "explain",
+  "intention",
   "graduate",
   "switch_channel",
   "end_call",
@@ -83,7 +85,7 @@ export const TOOL_DEFS: Record<ToolName, ToolDef> = {
     channels: BOTH,
   },
   remember: {
-    description: `Store a durable fact, preference or todo the user stated (never moods or personality). Source is where it came from. ${RESULT}`,
+    description: `Store a durable fact, preference or todo the user stated (never moods or personality). Source is where it came from. Reminders for yourself go through intention(open) instead. ${RESULT}`,
     input: rememberInput,
     channels: BOTH,
   },
@@ -95,6 +97,11 @@ export const TOOL_DEFS: Record<ToolName, ToolDef> = {
   explain: {
     description: `Show why you believe something: the evidence chain for subject + predicate (e.g. user, user_name). ${RESULT}`,
     input: explainInput,
+    channels: BOTH,
+  },
+  intention: {
+    description: `Your own mind, separate from facts about the user (ON MY MIND in your instructions). op "open": something you still want to do or bring up later (key like followup_landlord, goal in one line). op "outcome": after you raised something and they reacted, how receptive were they, 0 (shut it down) to 10 (yes), plus a short note of what they said; the server scores the built-ins itself, so use this to correct it or for your own keys. op "defer": snooze it N of your turns. op "done": it happened. op "drop": stop pursuing one of your own keys (the built-ins never drop, they only back off). ${RESULT}`,
+    input: intentionInput,
     channels: BOTH,
   },
   graduate: {

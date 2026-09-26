@@ -8,7 +8,8 @@ import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs"
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
 import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
-import type { BeliefStatus } from "@/lib/shared/types";
+import { eligibility } from "@/lib/memory/intentions";
+import type { BeliefStatus, IntentionStatus } from "@/lib/shared/types";
 import { cn, formatDuration } from "@/lib/utils";
 import { useHydrated } from "@/components/Simulator";
 import { SlotChips } from "@/components/progress/SlotChips";
@@ -47,6 +48,7 @@ export function BehindTheScenes() {
           <div className="flex flex-col gap-5 lg:col-span-2">
             <SlotTracker />
             <BrainCard />
+            <MindCard />
             <Transcript />
             <EventLog />
           </div>
@@ -229,6 +231,104 @@ function BrainCard() {
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+const INTENTION_TONE: Record<IntentionStatus, "neutral" | "green" | "amber" | "red" | "blue" | "violet"> = {
+  open: "blue",
+  asked: "amber",
+  done: "green",
+  dropped: "neutral",
+};
+
+const fmtWhen = (iso: string, now: number) => {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t > now ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+};
+
+/** Wall clock for eligibility countdowns, refreshed every 30 s (kept out of render for purity). */
+function useNow(intervalMs = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+/** What is on the agent's mind: the intentions projection, receptivity and when each may come up again. */
+function MindCard() {
+  const intentions = useSessionStore((st) => st.intentions);
+  const turn = useSessionStore((st) => st.turn);
+  const now = useNow();
+  const rows = useMemo(() => {
+    const rank = (s: IntentionStatus) => (s === "asked" ? 0 : s === "open" ? 1 : s === "done" ? 2 : 3);
+    return [...intentions].sort((a, b) => rank(a.status) - rank(b.status) || a.priority - b.priority || a.key.localeCompare(b.key));
+  }, [intentions]);
+  return (
+    <Card
+      title="On my mind"
+      subtitle="The agent's own intentions: what it still wants to bring up, how the user took it each time (0–10), and when it is allowed to try again. Core asks never drop; they back off."
+      right={<span className="font-mono text-[11px] text-black/45">turn {turn}</span>}
+    >
+      {rows.length === 0 ? (
+        <Empty>Nothing yet. The built-in intentions (name, need, Gmail, agent name) appear once the session exists on the server.</Empty>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-black/[0.06]">
+          <table className="w-full text-[12.5px]">
+            <thead className="bg-black/[0.02] text-left text-[11px] uppercase tracking-wider text-black/40">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">intention</th>
+                <th className="px-3 py-1.5 font-medium">status</th>
+                <th className="px-3 py-1.5 font-medium">receptivity</th>
+                <th className="px-3 py-1.5 font-medium">raised</th>
+                <th className="px-3 py-1.5 font-medium">next</th>
+                <th className="px-3 py-1.5 font-medium">last angle · note</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/[0.05]">
+              {rows.map((r) => {
+                const e = eligibility(r, turn, now);
+                const settled = r.status === "done" || r.status === "dropped";
+                const when = fmtWhen(r.next_eligible_at, now);
+                return (
+                  <tr key={r.key} className={cn("align-top", settled && "text-black/50")}>
+                    <td className="px-3 py-1.5">
+                      <div className="font-mono text-[11.5px]">{r.key}</div>
+                      <div className="text-[11.5px] text-black/50">{r.goal}</div>
+                    </td>
+                    <td className="px-3 py-1.5"><Pill tone={INTENTION_TONE[r.status] ?? "neutral"}>{r.status}</Pill></td>
+                    <td className="px-3 py-1.5">
+                      {r.receptivity === null ? (
+                        <span className="text-black/40">—</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-black/[0.06]">
+                            <span className={cn("block h-full rounded-full", r.receptivity >= 7 ? "bg-emerald-500" : r.receptivity >= 4 ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${r.receptivity * 10}%` }} />
+                          </span>
+                          <span className="font-mono text-[11px] text-black/60">
+                            {r.receptivity}/10{r.receptivity_history.length > 1 && r.receptivity_mean !== null ? ` · avg ${r.receptivity_mean}` : ""}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 font-mono text-[11.5px]">{r.nudges}×</td>
+                    <td className="px-3 py-1.5 text-[12px]">
+                      {settled ? r.reason ?? r.status : e.eligible ? <span className="text-emerald-700">eligible now</span> : <span className="text-black/60">{e.why}{when && e.msLeft > 0 ? ` (${when})` : ""}</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-[12px] text-black/55">
+                      {r.last_approach && <div className="italic">“{r.last_approach}”</div>}
+                      {r.notes.length > 0 && <div>{r.notes[r.notes.length - 1]}</div>}
+                      {!settled && r.reason && <div className="text-black/40">{r.reason}</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -510,7 +610,8 @@ function StorageCard() {
       <ul className="space-y-2 text-[13px] text-black/70">
         <li>
           <span className="font-medium text-black">Source of truth:</span> Supabase Postgres (<code className="font-mono text-[11.5px]">sessions</code>, <code className="font-mono text-[11.5px]">messages</code>,{" "}
-          <code className="font-mono text-[11.5px]">events</code>, <code className="font-mono text-[11.5px]">memory_events</code> → <code className="font-mono text-[11.5px]">beliefs</code>). Only route handlers write.
+          <code className="font-mono text-[11.5px]">events</code>, <code className="font-mono text-[11.5px]">memory_events</code> → <code className="font-mono text-[11.5px]">beliefs</code>,{" "}
+          <code className="font-mono text-[11.5px]">intention_events</code> → <code className="font-mono text-[11.5px]">intentions</code>). Only route handlers write.
         </li>
         <li>
           <span className="font-medium text-black">This browser:</span> a mirror fed by Supabase Realtime (anonymous auth + RLS) with catch-up polling as the fallback, cached in{" "}

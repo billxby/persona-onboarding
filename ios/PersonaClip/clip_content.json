@@ -3,13 +3,13 @@
   "version": "1.1",
   "hero": {
     "eyebrow": "Persona",
-    "title": "First AI assistant you can wear.",
-    "subtitle": "Made to get things done. Say what you need and your Persona handles the rest: no prompts to learn, nothing to set up.",
+    "title": "Your assistant, right in Messages.",
+    "subtitle": "Text it like a person. It handles the inbox, the calendar, the subscriptions and the calls, and only asks when it matters.",
     "cta": {
       "label": "Start in Messages",
       "url": "https://yourpersona.com/start"
     },
-    "image": "/brand/og-band.png"
+    "image": "/clip/og.png"
   },
   "features": [
     {

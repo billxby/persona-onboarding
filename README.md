@@ -14,7 +14,7 @@ running and evaluating it.
 ```bash
 npm install
 cp .env.example .env.local        # fill in the keys (table below)
-# apply supabase/migrations/0001_init.sql to your Supabase project (SQL editor, CLI, or the Supabase MCP)
+# apply supabase/migrations/0001_init.sql and 0002_intentions.sql to your Supabase project (SQL editor, CLI, or the Supabase MCP)
 # Supabase dashboard → Authentication → Sign In / Providers → enable "Anonymous sign-ins"
 npm run dev                       # http://localhost:3000
 curl localhost:3000/api/health    # shows the active text provider, models, prompt version
@@ -42,7 +42,7 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
 | Path | What you see |
 |---|---|
 | `/` | The phone: iMessage thread with the call screen overlaid when a call rings or is live. Progress chips (You · Your need · Gmail · My name) sit above it and are clickable to edit. The `···` button opens the stage menu: behind the scenes, incoming call, connect Gmail, use demo inbox, restart, previous runs |
-| `/db` | Behind the scenes: the session as the server sees it, slot tracker, the brain view (active beliefs with confidence, status and reason; `next_best_ask`; voice latency p50/p95; connection mode; prompt version), transcript, event log |
+| `/db` | Behind the scenes: the session as the server sees it, slot tracker, the brain view (active beliefs with confidence, status and reason; `next_best_ask`; voice latency p50/p95; connection mode; prompt version), what is on the agent's mind (intentions with receptivity and backoff), transcript, event log |
 | `/connect?sid=…` | The page the "Connect Gmail" link card opens in a popup: real Google OAuth (read-only) or "Use the demo inbox instead" |
 | `/summary/[sid]` | The graduation summary the summary card links to |
 
@@ -51,7 +51,8 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
 1. The thread opens empty with "Hey Persona" prefilled in the compose field, unsent. Sending it gets the bot's
    fixed opener, three bubbles: "Hey! I'm your new personal assistant. Tap below to see what I can do ;)", the
    Meet your Persona App Clip card, then "So, what's something you want to take off your plate this week?"
-   Two exits: type, or ring the phone.
+   Any other first text goes to the model, and the server adds the card after its first reply. Two exits:
+   type, or ring the phone.
 2. Every user turn goes through slot extraction via tools, whatever was asked. A stated need flips
    `mode` to `main` immediately: the task starts and the missing slots become soft, once-per-session nudges.
 3. Ask order is `user_name → need → gmail`; in text, `agent_name` after the first useful result. One
@@ -80,14 +81,14 @@ Browser (Next.js page)
   ├─ Supabase Realtime on messages / sessions / beliefs (anonymous auth + RLS), else 2 s polling
   └─ client timers: silence tiers, debounce, heartbeat, pagehide beacon
 Next.js route handlers (service-role Supabase client, server only)
-Supabase: sessions, messages, events, oauth_tokens, memory_events, beliefs; Storage bucket "voicemail"
+Supabase: sessions, messages, events, oauth_tokens, memory_events → beliefs, intention_events → intentions; Storage bucket "voicemail"
 ```
 
 | Route | Purpose |
 |---|---|
 | `POST /api/session`, `GET /api/session/[id]?after=` | Create (idempotent on a client-proposed id; sets the `persona_sid` cookie; the thread starts empty) and catch up. Catch-up also runs lazy drop detection |
 | `POST /api/messages` | Persist a user bubble or tapback immediately; reports `call_live` so the client can interrupt the call |
-| `POST /api/chat` | One assistant turn as an NDJSON stream: `typing`, `tool`, `message` per bubble (400–900 ms typing pauses), `session`, `beliefs`, `done`. Triggers: `user`, `open`, `call_ended`, `dropped`, `voicemail`, `gmail_connected`, `gmail_declined`, `welcome_back`, `silence_end` |
+| `POST /api/chat` | One assistant turn as an NDJSON stream: `typing`, `tool`, `message` per bubble (400–900 ms typing pauses), `session`, `beliefs`, `mind`, `done`. Triggers: `user`, `open`, `call_ended`, `dropped`, `voicemail`, `gmail_connected`, `gmail_declined`, `welcome_back`, `silence_end` |
 | `POST /api/realtime/token`, `GET /api/realtime/instructions` | Mint the short-lived Realtime client secret with the call prompt and the tool schemas; re-fetch instructions after state changes |
 | `POST /api/tools/[name]` | The same tools over HTTP for the voice session (results compacted to ~300 bytes) |
 | `POST /api/call/event`, `/heartbeat`, `/transcript` | Call lifecycle (ringing, started, ended, dropped, silence tiers, latency, mic denied), 5 s heartbeat, transcript turns → supervisor |
@@ -127,6 +128,23 @@ The design borrows from Zep's temporal knowledge graph
 content is quarantined) and Doyle's 1979 truth maintenance system
 ([doi:10.1016/0004-3702(79)90008-0](https://doi.org/10.1016/0004-3702(79)90008-0): every belief keeps
 its justifications). Prior work: [Cortesol](https://devpost.com/software/cortesol).
+
+### What is on the agent's mind
+
+Beliefs are what the agent knows; intentions are what it still wants to do or bring up (DESIGN §13b).
+A second append-only ledger, `intention_events`, folds into one `intentions` row per key: `get_name`,
+`learn_need`, `connect_gmail`, `name_agent` are seeded with every session, and the model can open its
+own (`intention(open, followup_landlord, ...)`). When the agent raises one (a question matching the
+intention's cue, or the Connect Gmail card), the next user message is scored for receptivity, 0 (shut it
+down) to 10 (yes), by the fast model with a regex fallback; a decline on Google's consent screen, a
+timed-out link or a "skip" score without a model call. The score sets a backoff in assistant turns
+with a wall-clock floor for cold reactions, doubled on every extra nudge, so a 1/10 on Gmail means the
+ask comes back much later and from a different angle (the block suggests the next untried one), never
+in the next breath. The four core asks are sticky: never dropped, only backed off, because connecting
+Gmail is what the product is for. `next_best_ask` respects the schedule, the prompt carries an
+`ON MY MIND` block after `WHAT I KNOW`, and `/db` shows each intention's status, receptivity history,
+times raised and when it is eligible again. Replay is deterministic and fuzz-tested like the beliefs
+ledger.
 
 ### Voice
 
@@ -218,7 +236,7 @@ swipe for timestamps. There are deliberately no buttons, quick replies or forms 
 ```bash
 npm run typecheck
 npm run lint
-npm test                                        # 98 unit tests: ledger determinism fuzz, validators,
+npm test                                        # 125 unit tests: ledger + intentions determinism fuzz, validators,
                                                 # state machine, prompt budget, text splitting, gmail mock, mirror, call
 npm run simulate -- --persona troll --turns 8   # hostile-user simulator (needs the dev server)
 npm run simulate -- --persona all --turns 6 --tag
@@ -264,7 +282,7 @@ a restart. `PROMPT_VERSION` is stamped on every session.
 | Area | Path |
 |---|---|
 | Design and build contract | `DESIGN.md`, `docs/backend-plan.md`, `docs/cheatsheets/` |
-| Schema | `supabase/migrations/0001_init.sql` |
+| Schema | `supabase/migrations/0001_init.sql`, `supabase/migrations/0002_intentions.sql` |
 | Shared contract (rows, API types) | `src/lib/shared/types.ts`, `src/lib/shared/text.ts` |
 | Server core | `src/lib/server/{env,db,providers,session,messages,state}.ts` |
 | Prompts and composition | `prompts/*.md`, `src/lib/server/prompt.ts` |
@@ -274,6 +292,7 @@ a restart. `PROMPT_VERSION` is stamped on every session.
 | Voice (browser) | `src/lib/voice/realtimeTransport.ts`, `src/lib/voice/silence.ts` |
 | Gmail | `src/lib/server/gmail/`, `src/app/api/oauth/google/`, `src/app/connect/`, `data/mock_inbox.json` |
 | Memory ledger | `src/lib/memory/ledger.ts` (pure), `src/lib/memory/store.ts` |
+| Intentions (on my mind) | `src/lib/memory/intentions.ts` (pure), `src/lib/memory/mind.ts`, `src/lib/server/brain/receptivity.ts`, `prompts/receptivity.md` |
 | Browser mirror and brain seam | `src/lib/brain/serverBrain.ts`, `src/lib/brain/mirror.ts`, `src/lib/supabase/client.ts` |
 | Simulator UI | `src/components/` (iMessage thread, call screen, phone shell, chips, stage menu, behind the scenes) |
 | Evaluation | `scripts/simulate.ts`, `scripts/metrics.ts`, `scripts/e2e.mjs`, `tests/unit/` |

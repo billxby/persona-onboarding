@@ -58,12 +58,9 @@ export function ClipExperience({ content, sid, embed }: { content: ClipContent; 
     >
       {!embed && (
         <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-black/[0.06] bg-[#f2f2f7]/85 px-5 py-3 backdrop-blur-xl">
-          <div className="flex items-center gap-2 text-[15px] font-semibold">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/persona-icon-512.png" alt="" className="h-7 w-7 rounded-[8px] ring-1 ring-black/[0.08]" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/persona-wordmark.svg" alt="Persona" className="h-[16px] w-auto" />
-          </div>
+          {/* the wordmark already carries the loop mark, so it stands alone */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/persona-wordmark.svg" alt="Persona" className="h-[18px] w-auto" />
           <a {...cta("nav-start", startUrl)} className="text-[15px] font-medium text-[#1982fc]">
             Open in Messages
           </a>
@@ -76,7 +73,7 @@ export function ClipExperience({ content, sid, embed }: { content: ClipContent; 
           {content.hero.image && (
             <div className="mb-4 overflow-hidden rounded-[18px] bg-white ring-1 ring-black/[0.06]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={content.hero.image} alt="Persona Band" className="h-[220px] w-full object-cover object-right" />
+              <img src={content.hero.image} alt="What your Persona does in Messages" className="h-[220px] w-full object-cover object-center" />
             </div>
           )}
           <div className="mb-3 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-black/40">
