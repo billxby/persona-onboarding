@@ -2,6 +2,7 @@
 
 import { session } from "@/lib/session/store";
 import type { BubbleEffect, CallEndReason, LinkPreview, ReactionKind } from "@/lib/session/types";
+import { USER_HELLO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import type { OnboardingBrain } from "./types";
 
@@ -60,6 +61,8 @@ export class MockBrain implements OnboardingBrain {
     if (this.opening || session.get().messages.length > 0) return;
     this.opening = true;
     try {
+      // you text first (the start link prefills it); the mock replies the way the server would
+      session.get().appendMessage({ role: "user", content: { kind: "text", text: USER_HELLO }, status: "delivered" });
       await this.say(
         "Hey, I'm your new Persona 👋 I'll get you set up by doing something useful, not by asking a bunch of questions. Want me to give you a quick call, or just text?",
         { delayMs: 900 },

@@ -1,6 +1,6 @@
 import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
 import type { Belief, ChatEvent, ChatTrigger, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
-import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs } from "@/lib/shared/text";
+import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, USER_HELLO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import { env } from "../env";
 import { markGmail } from "../gmail/oauth";
@@ -14,8 +14,21 @@ import { runTool } from "../tools/run";
 import { insertVoicemail } from "../voicemail";
 import { checkReply } from "./guard";
 
-/** DESIGN.md §7.1: the bot texts first. Inserted by the server so the first paint already has it. */
+/** DESIGN.md §7.1: the bot's fixed reply to your "Hey Persona". Inserted by the server so the first paint already has it. */
 export const OPENER = "Hey, I'm your Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live.";
+
+/**
+ * Seed a thread's opening: your prefilled "Hey Persona" on an empty thread, then the opener
+ * when no assistant message exists yet. Deterministic, no model call, idempotent. The hello
+ * row carries `payload.seeded` so analytics can tell it from a typed turn.
+ */
+export async function seedOpening(session_id: string): Promise<MessageRow[]> {
+  const thread = await listMessages(session_id, { channel: "text" });
+  const rows: MessageRow[] = [];
+  if (thread.length === 0) rows.push(await insertMessage({ session_id, role: "user", kind: "text", content: USER_HELLO, channel: "text", payload: { seeded: true } }));
+  if (!thread.some((m) => m.role === "assistant")) rows.push(await insertMessage({ session_id, role: "assistant", kind: "text", content: OPENER, channel: "text" }));
+  return rows;
+}
 
 export type Emit = (e: ChatEvent) => void;
 
@@ -166,11 +179,7 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
 
     // Deterministic triggers: no model call.
     if (trigger === "open") {
-      const thread = await listMessages(session_id, { channel: "text" });
-      if (!thread.some((m) => m.role === "assistant")) {
-        const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: OPENER, channel: "text" });
-        emit({ type: "message", message: row });
-      }
+      for (const row of await seedOpening(session_id)) emit({ type: "message", message: row });
       await finish();
       return;
     }

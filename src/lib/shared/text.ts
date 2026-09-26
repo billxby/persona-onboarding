@@ -181,3 +181,6 @@ export function looksLikeCallRequest(text: string): boolean {
   if (/\b(don'?t|do not|no need to|never|stop) (call|ring|phone)\b/.test(t)) return false;
   return /\b(call me|give me a call|ring me|phone me|can you call|could you call|let'?s (talk|do a call|hop on a call|call)|call\?|do the call|on the phone|i'?d rather (talk|call))\b/.test(t);
 }
+
+/** DESIGN.md §7.1: you text first. The start link prefills this, so a fresh thread opens with it already sent. */
+export const USER_HELLO = "Hey Persona";

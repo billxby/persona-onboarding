@@ -41,7 +41,7 @@ export function Simulator() {
   const showCall = screen === "call" && call.state !== "idle";
 
   // On (re)load: a call that was live when the tab closed is a drop; the brain
-  // posts its opener if the thread is empty.
+  // seeds the opening if the thread is empty.
   useEffect(() => {
     if (!hydrated) return;
     // dev-only handle for browser walkthroughs (scripts/e2e.mjs)
@@ -60,7 +60,7 @@ export function Simulator() {
   }, [hydrated]);
 
   // The brain bootstraps once per session id (idempotent): on load it (re)joins the
-  // server session and mirrors it; on an empty thread the server inserts the opener.
+  // server session and mirrors it; on an empty thread the server seeds your "Hey Persona" and the opener.
   const sessionId = useSessionStore((s) => s.sessionId);
   const threadEmpty = messages.length === 0;
   useEffect(() => {

@@ -168,7 +168,7 @@ Graduation fires when `need` is set and (a) a value moment happened, or (b) the 
 
 ## 7. Conversation design
 
-1. Bot texts first: "Hey, I'm your Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live." Two exits: type a need, or tap call.
+1. You text first: the start link prefills "Hey Persona", so the thread opens with it already sent. The bot replies with its fixed line: "Hey, I'm your Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live." Two exits: type a need, or tap call.
 2. Call rings 1 to 2 s after tapping. Decline button exists. Decline → 12 s voicemail bubble with transcription: "It's your Persona. Text me your name and one thing you want gone this week and I'll start."
 3. Call opener continues what was typed. If a need was typed: "Hey, so the gym thing." Otherwise: "Quick call, two minutes tops, then I'll actually do something for you. What should I call you?"
 4. Order on the call: name (use it in the next sentence) → need (paraphrase, ask the one clarifying question you'd need) → Gmail framed as a means to the need ("If you connect Gmail I can find the membership email. Button's on your screen, read-only. I'll wait.") → end with a promise ("I'm on it. Watch the chat.").
