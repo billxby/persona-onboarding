@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { getBrain } from "@/lib/brain";
 import { useSessionStore } from "@/lib/session/store";
-import type { Tapback } from "@/lib/session/types";
+import type { ReactionKind } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
 import { CallScreen } from "@/components/call/CallScreen";
 import { CallBanner } from "@/components/imessage/CallBanner";
@@ -30,6 +30,7 @@ export function Simulator() {
   const appendMessage = useSessionStore((s) => s.appendMessage);
   const updateMessage = useSessionStore((s) => s.updateMessage);
   const toggleReaction = useSessionStore((s) => s.toggleReaction);
+  const senderInContacts = useSessionStore((s) => s.senderInContacts);
 
   const contactName = agentName || "Persona";
   const callActive = call.state === "connecting" || call.state === "live";
@@ -57,7 +58,7 @@ export function Simulator() {
   }, [hydrated, messageCount]);
 
   const onSend = (text: string, replyToId?: string) => {
-    const m = appendMessage({ role: "user", text, status: "sending", replyToId });
+    const m = appendMessage({ role: "user", content: { kind: "text", text }, status: "sending", replyToId });
     setTimeout(() => {
       // don't downgrade a message the brain already marked as read
       const cur = useSessionStore.getState().messages.find((x) => x.id === m.id);
@@ -66,9 +67,9 @@ export function Simulator() {
     void getBrain().onUserText(text);
   };
 
-  const onAction = (actionId: string, messageId: string) => void getBrain().onCardAction(actionId, messageId);
+  const onOpenLink = (messageId: string, url: string) => void getBrain().onLinkOpen(messageId, url);
 
-  const onReact = (messageId: string, kind: Tapback) => {
+  const onReact = (messageId: string, kind: ReactionKind) => {
     const added = toggleReaction(messageId, kind, "user");
     void getBrain().onUserReaction(messageId, kind, added);
   };
@@ -88,11 +89,12 @@ export function Simulator() {
                   {callActive && <CallBanner startedAt={call.startedAt} onReturn={() => setScreen("call")} />}
                   <IMessageThread
                     contactName={contactName}
+                    senderInContacts={senderInContacts}
                     messages={messages}
                     typing={typing}
                     onSend={onSend}
-                    onAction={onAction}
                     onReact={onReact}
+                    onOpenLink={onOpenLink}
                   />
                 </motion.div>
               )}

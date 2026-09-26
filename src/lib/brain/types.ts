@@ -1,4 +1,4 @@
-import type { CallEndReason, Tapback } from "@/lib/session/types";
+import type { CallEndReason, ReactionKind } from "@/lib/session/types";
 
 /**
  * The seam where the LLM "brain" plugs in later. The UI never talks to a model
@@ -12,10 +12,10 @@ export interface OnboardingBrain {
   start(): Promise<void>;
   /** User sent a text in the iMessage thread. */
   onUserText(text: string): Promise<void>;
-  /** User tapped a button on a rich card. */
-  onCardAction(actionId: string, messageId: string): Promise<void>;
+  /** User tapped a link (rich preview or App Clip card) the assistant sent. */
+  onLinkOpen(messageId: string, url: string): Promise<void>;
   /** User added (or removed) a tapback on a message. */
-  onUserReaction(messageId: string, kind: Tapback, added: boolean): Promise<void>;
+  onUserReaction(messageId: string, kind: ReactionKind, added: boolean): Promise<void>;
   /** User accepted the incoming call and the voice transport connected. */
   onCallAnswered(): Promise<void>;
   /** The call ended, for whatever reason (hangup, drop, decline, silence…). */

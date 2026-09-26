@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { callController } from "@/lib/call/controller";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
-import { SLOT_LABELS, SLOT_ORDER, type SlotKey, type SlotStatus } from "@/lib/session/types";
+import { SLOT_LABELS, SLOT_ORDER, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
 import { cn, formatDuration } from "@/lib/utils";
 import { useHydrated } from "@/components/Simulator";
@@ -179,6 +179,14 @@ function SessionCard() {
         <KV label="assistant typing"><Pill tone={s.assistantTyping ? "violet" : "neutral"}>{String(s.assistantTyping)}</Pill></KV>
         <KV label="messages">{s.messages.length}</KV>
         <KV label="events">{s.events.length}</KV>
+        <KV label="in contacts">
+          <button
+            onClick={() => s.setSenderInContacts(!s.senderInContacts)}
+            className={cn("rounded-full px-2 py-0.5 font-mono text-[11px]", s.senderInContacts ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-black/[0.06] text-black/70")}
+          >
+            {String(s.senderInContacts)} · toggle
+          </button>
+        </KV>
       </div>
     </Card>
   );
@@ -267,7 +275,7 @@ function Transcript() {
   const messages = useSessionStore((st) => st.messages);
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   return (
-    <Card title="Transcript" subtitle={`${messages.length} messages, with tapbacks, replies and receipts.`}>
+    <Card title="Transcript" subtitle={`${messages.length} messages. Content is limited to what a real iMessage sender can put in a thread: text, links, images.`}>
       {messages.length === 0 ? (
         <Empty>No messages yet.</Empty>
       ) : (
@@ -280,20 +288,25 @@ function Transcript() {
               </Pill>
               <div className="min-w-0 flex-1">
                 {m.replyToId && byId.get(m.replyToId) && (
-                  <div className="mb-0.5 truncate text-[12px] text-black/45">↩ {byId.get(m.replyToId)!.text}</div>
+                  <div className="mb-0.5 truncate text-[12px] text-black/45">↩ {messageText(byId.get(m.replyToId)!)}</div>
                 )}
-                <div className="whitespace-pre-wrap">{m.text || <span className="text-black/35">(card only)</span>}</div>
-                {m.card && (
-                  <div className="mt-1 text-[12px] text-black/50">
-                    card “{m.card.title}” · {m.card.actions.map((a) => a.label).join(" / ")}
-                    {m.card.takenActionId && <> · chose <b>{m.card.actions.find((a) => a.id === m.card!.takenActionId)?.label}</b></>}
+                {m.content.kind === "text" && <div className="whitespace-pre-wrap">{m.content.text}</div>}
+                {m.content.kind === "link" && (
+                  <div>
+                    <span className="text-blue-700 underline decoration-blue-300">{m.content.link.url}</span>
+                    <div className="mt-0.5 text-[12px] text-black/50">
+                      rich link · {m.content.link.title ?? m.content.link.domain}
+                      {m.content.link.appClip && <> · App Clip “{m.content.link.appClip.title}”</>}
+                    </div>
                   </div>
                 )}
+                {m.content.kind === "image" && <div className="text-black/60">🖼 {m.content.image.alt ?? "image"}</div>}
                 <div className="mt-1 flex flex-wrap gap-1.5">
+                  <Pill tone="violet">{m.content.kind}{m.content.kind === "text" && m.content.effect ? ` · ${m.content.effect}` : ""}</Pill>
                   {m.status && <Pill>{m.status}{m.readAt ? ` ${fmtTime(m.readAt)}` : ""}</Pill>}
                   {m.reactions?.map((r) => (
                     <Pill key={r.by} tone={r.by === "user" ? "blue" : "neutral"}>
-                      {r.kind} · {r.by}
+                      {r.kind.type === "emoji" ? r.kind.emoji : r.kind.tapback} · {r.by}
                     </Pill>
                   ))}
                 </div>

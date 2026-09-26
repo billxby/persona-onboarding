@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUp, Plus, X } from "lucide-react";
+import { ArrowUp, AudioLines, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { GLASS } from "./Tapback";
 
 export interface ReplyTarget {
   id: string;
@@ -10,6 +11,7 @@ export interface ReplyTarget {
   text: string;
 }
 
+/** iOS 26 compose bar: content scrolls underneath, "+" and the field are frosted glass. */
 export function Composer({
   onSend,
   disabled,
@@ -37,16 +39,11 @@ export function Composer({
   };
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-20 bg-white/85 px-3 pb-[30px] pt-2 backdrop-blur-xl">
+    <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-white via-white/85 to-transparent px-3 pb-[30px] pt-6">
       <AnimatePresence>
         {replyTo && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, height: 0 }}
-            animate={{ opacity: 1, y: 0, height: "auto" }}
-            exit={{ opacity: 0, y: 10, height: 0 }}
-            className="mb-2 overflow-hidden"
-          >
-            <div className="flex items-center justify-between rounded-2xl bg-imsg-gray/80 px-3 py-1.5 text-[13px]">
+          <motion.div initial={{ opacity: 0, y: 10, height: 0 }} animate={{ opacity: 1, y: 0, height: "auto" }} exit={{ opacity: 0, y: 10, height: 0 }} className="mb-2 overflow-hidden">
+            <div className={`flex items-center justify-between rounded-2xl px-3 py-1.5 text-[13px] ${GLASS}`}>
               <div className="min-w-0">
                 <div className="font-semibold">Replying to {replyTo.authorName}</div>
                 <div className="truncate text-black/55">{replyTo.text}</div>
@@ -59,10 +56,10 @@ export function Composer({
         )}
       </AnimatePresence>
       <div className="flex items-end gap-2">
-        <button className="mb-0.5 flex h-[34px] w-[34px] items-center justify-center rounded-full bg-imsg-gray text-black/70" aria-label="More">
+        <button className={`mb-[1px] flex h-[38px] w-[38px] items-center justify-center rounded-full text-black/70 ${GLASS}`} aria-label="More">
           <Plus className="h-5 w-5" strokeWidth={2.2} />
         </button>
-        <div className="relative flex min-h-[36px] flex-1 items-end rounded-[18px] border border-black/15 bg-white pr-9">
+        <div className={`relative flex min-h-[40px] flex-1 items-end rounded-[20px] pr-10 ${GLASS}`}>
           <textarea
             ref={ref}
             value={text}
@@ -76,15 +73,15 @@ export function Composer({
             }}
             rows={1}
             placeholder="iMessage"
-            className="max-h-[110px] w-full resize-none bg-transparent px-3 py-[7px] text-[16px] leading-[20px] outline-none placeholder:text-black/35"
+            className="max-h-[110px] w-full resize-none bg-transparent px-3.5 py-[9px] text-[16px] leading-[20px] outline-none placeholder:text-black/35"
             onInput={(e) => {
               const el = e.currentTarget;
               el.style.height = "auto";
               el.style.height = `${Math.min(110, el.scrollHeight)}px`;
             }}
           />
-          <AnimatePresence>
-            {canSend && (
+          <AnimatePresence mode="wait" initial={false}>
+            {canSend ? (
               <motion.button
                 key="send"
                 initial={{ scale: 0.4, opacity: 0 }}
@@ -92,11 +89,15 @@ export function Composer({
                 exit={{ scale: 0.4, opacity: 0 }}
                 transition={{ type: "spring", stiffness: 500, damping: 28 }}
                 onClick={submit}
-                className="absolute bottom-[3px] right-[3px] flex h-[28px] w-[28px] items-center justify-center rounded-full bg-imsg-blue text-white"
+                className="absolute bottom-[4px] right-[4px] flex h-[31px] w-[31px] items-center justify-center rounded-full bg-imsg-blue text-white"
                 aria-label="Send"
               >
                 <ArrowUp className="h-4 w-4" strokeWidth={3} />
               </motion.button>
+            ) : (
+              <motion.span key="audio" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute bottom-[9px] right-[11px] text-black/45" aria-label="Audio message">
+                <AudioLines className="h-[21px] w-[21px]" strokeWidth={1.9} />
+              </motion.span>
             )}
           </AnimatePresence>
         </div>

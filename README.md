@@ -25,7 +25,7 @@ Two pages:
 
 | Area | Path | Notes |
 |---|---|---|
-| iMessage simulator | `src/components/imessage/` | Thread, bubbles with tails, typing dots, composer, rich action cards, in-call green banner. Real iMessage gestures: long-press / double-tap / right-click opens the blurred tapback bar + menu (Reply, Copy); tapback badges (yours blue, theirs gray); inline replies with the hooked connector; drag the thread left to reveal timestamps; hour-gap separators; Delivered → Read receipts with time |
+| iMessage simulator | `src/components/imessage/` | Thread, bubbles with tails, typing dots, frosted (iOS 26) header and compose bar, in-call green banner. Real iMessage gestures: long-press / double-tap / right-click opens the blurred tapback bar (six coloured glyphs + emoji) and menu (Reply, Copy); frosted tapback badges; inline replies with the hooked connector; drag left for timestamps; hour-gap separators; Delivered → Read receipts; bubble effects (slam, loud, gentle, invisible ink) with Replay; rich link previews; App Clip bubble + system card when Persona is in Contacts |
 | Call simulator | `src/components/call/` | Incoming (ringtone, accept/decline) → live (timer, real mic meter, assistant meter, live captions, mute/speaker/messages, hang up) → ended |
 | Phone shell | `src/components/phone/` | iPhone bezel, status bar with live clock, dynamic island |
 | Progress chips | `src/components/progress/SlotChips.tsx` | You · Your need · Gmail · My name |
@@ -38,6 +38,22 @@ Two pages:
 | **Voice seam** | `src/lib/voice/` | `VoiceTransport` interface + `MockVoiceTransport`. Swap in `createVoiceTransport()` |
 | Call controller | `src/lib/call/controller.ts` | `ring / answer / decline / hangUp / end(reason)`. Every way a call stops is one `end(reason)` |
 | Audio | `src/lib/audio/` | `useMicLevel` (getUserMedia + AnalyserNode, nothing leaves the browser), WebAudio ringtone (no assets) |
+
+## What the thread is allowed to show
+
+The message model is a closed union of what a regular iMessage sender can put in
+a 1:1 thread (`MessageContent` in `src/lib/session/types.ts`): **text** (with an
+optional bubble effect), **link** (rich preview, optionally an App Clip) and
+**image**. Interactions: tapbacks (six classic + emoji), inline replies, copy,
+read receipts, typing, swipe-for-timestamps. There are deliberately **no buttons,
+quick replies, list pickers or forms**: those exist only in Apple Messages for
+Business, which is customer-initiated and requires human agents. Research and
+sources: `docs/research/imessage-allowed-content.md` and
+`docs/research/app-clips-in-messages.md`.
+
+App Clip cards render only when the sender is in the recipient's Contacts, so the
+session tracks `senderInContacts` (toggle it from the `···` menu or `/db`). Off,
+the same link is a plain rich preview, exactly as iOS would degrade it.
 
 ## How the pieces talk
 
@@ -66,11 +82,12 @@ Two pages:
 
 ## What the mock does today
 
-- Posts the text opener with a "Call me / Just text" card.
-- "call me" (typed or tapped) rings the phone. Accepting connects the mock
-  transport, which streams the call opener as live captions.
+- Posts the text opener and asks call or text. "call me" / "yes" rings the phone.
+  Accepting connects the mock transport, which streams the call opener as captions.
 - Hang up, decline, drop and silence each produce the matching text follow-up
-  from the failure-mode table, with cards like "Keep texting / Call me back".
+  from the failure-mode table. After a hang-up it sends the Gmail link.
+- "connect gmail" sends the `/start` link: rich preview, or App Clip bubble if
+  Persona is in Contacts. Opening it marks Gmail pending. "slam" shows an effect.
 - Tapbacks and replies are recorded on the message and logged as events. Say
   "thanks" and it hearts your message; heart one of yours first and it hearts back.
 - Any other text gets an honest "(mock) not wired yet" reply.

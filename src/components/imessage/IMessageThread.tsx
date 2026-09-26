@@ -2,8 +2,9 @@
 
 import { AnimatePresence, motion, useMotionValue, useTransform } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage, Tapback } from "@/lib/session/types";
+import { messageText, type ChatMessage, type ReactionKind } from "@/lib/session/types";
 import { cn, formatClock } from "@/lib/utils";
+import { AppClipCard } from "./AppClipCard";
 import { Composer, type ReplyTarget } from "./Composer";
 import { MessageActions, type AnchorRect } from "./MessageActions";
 import { MessageBubble } from "./MessageBubble";
@@ -16,29 +17,32 @@ const HOUR = 60 * 60 * 1000;
 /**
  * The iMessage simulator. Pure presentation with the real iMessage gestures:
  * long-press / double-tap / right-click for tapbacks + menu, inline replies,
- * drag the thread left to reveal timestamps, hour-gap separators, read receipts.
+ * drag the thread left to reveal timestamps, hour-gap separators, read receipts,
+ * rich links and App Clip cards (gated on the sender being in Contacts).
  */
 export function IMessageThread({
   contactName,
+  senderInContacts,
   messages,
   typing,
   onSend,
-  onAction,
   onReact,
+  onOpenLink,
 }: {
   contactName: string;
+  senderInContacts: boolean;
   messages: ChatMessage[];
   typing: boolean;
   onSend: (text: string, replyToId?: string) => void;
-  onAction: (actionId: string, messageId: string) => void;
-  onReact: (messageId: string, kind: Tapback) => void;
+  onReact: (messageId: string, kind: ReactionKind) => void;
+  onOpenLink: (messageId: string, url: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [actions, setActions] = useState<{ id: string; rect: AnchorRect; screenHeight: number } | null>(null);
   const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [appClipFor, setAppClipFor] = useState<string | null>(null);
 
-  // drag-to-reveal timestamps
   const x = useMotionValue(0);
   const timeOpacity = useTransform(x, [-REVEAL_PX, -REVEAL_PX / 3, 0], [1, 0.2, 0]);
 
@@ -51,6 +55,7 @@ export function IMessageThread({
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const lastOutgoing = [...messages].reverse().find((m) => m.role === "user");
   const activeMessage = actions ? byId.get(actions.id) : undefined;
+  const appClipMessage = appClipFor ? byId.get(appClipFor) : undefined;
 
   const openActions = useCallback((id: string, el: HTMLElement) => {
     const root = rootRef.current;
@@ -64,22 +69,26 @@ export function IMessageThread({
       screenHeight: root.offsetHeight,
     });
   }, []);
-
   const closeActions = () => setActions(null);
+
+  const openLink = useCallback(
+    (id: string) => {
+      const m = byId.get(id);
+      if (m?.content.kind === "link") onOpenLink(id, m.content.link.url);
+    },
+    [byId, onOpenLink],
+  );
 
   const replyTarget: ReplyTarget | null = useMemo(() => {
     const m = replyToId ? byId.get(replyToId) : undefined;
-    return m ? { id: m.id, authorName: m.role === "user" ? "yourself" : contactName, text: m.text } : null;
+    return m ? { id: m.id, authorName: m.role === "user" ? "yourself" : contactName, text: messageText(m) } : null;
   }, [replyToId, byId, contactName]);
 
   return (
     <div ref={rootRef} className="relative h-full w-full select-none bg-white">
       <ThreadHeader name={contactName} />
 
-      <div
-        ref={scrollRef}
-        className={cn("no-scrollbar absolute inset-x-0 top-[116px] overflow-x-hidden overflow-y-auto", replyTarget ? "bottom-[130px]" : "bottom-[78px]")}
-      >
+      <div ref={scrollRef} className={cn("no-scrollbar absolute inset-x-0 top-[100px] overflow-x-hidden overflow-y-auto", replyTarget ? "bottom-[136px]" : "bottom-[84px]")}>
         <motion.div
           drag="x"
           dragDirectionLock
@@ -88,7 +97,7 @@ export function IMessageThread({
           dragMomentum={false}
           dragSnapToOrigin
           style={{ x }}
-          className="flex min-h-full flex-col justify-end gap-[3px] px-4 pb-2 pt-3"
+          className="flex min-h-full flex-col justify-end gap-[3px] px-4 pb-2 pt-6"
         >
           <AnimatePresence initial={false}>
             {messages.map((m, i) => {
@@ -105,8 +114,10 @@ export function IMessageThread({
                     replyTo={m.replyToId ? byId.get(m.replyToId) : undefined}
                     tail={tail}
                     timeOpacity={timeOpacity}
-                    onAction={onAction}
+                    senderInContacts={senderInContacts}
                     onOpenActions={openActions}
+                    onOpenLink={openLink}
+                    onOpenAppClip={setAppClipFor}
                   />
                   {m.id === lastOutgoing?.id && m.status && (
                     <div className="mt-0.5 text-right text-[11px] text-black/45">
@@ -151,8 +162,22 @@ export function IMessageThread({
               closeActions();
             }}
             onCopy={() => {
-              void navigator.clipboard?.writeText(activeMessage.text);
+              void navigator.clipboard?.writeText(messageText(activeMessage));
               closeActions();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {appClipMessage && appClipMessage.content.kind === "link" && appClipMessage.content.link.appClip && (
+          <AppClipCard
+            key={appClipMessage.id}
+            link={appClipMessage.content.link}
+            onClose={() => setAppClipFor(null)}
+            onOpen={() => {
+              openLink(appClipMessage.id);
+              setAppClipFor(null);
             }}
           />
         )}

@@ -148,3 +148,25 @@ body {
 .ring-pulse::after {
   animation-delay: 0.9s;
 }
+
+/* invisible ink dust */
+@keyframes ink-drift {
+  0% {
+    background-position: 0 0, 10px 6px, 4px 12px;
+  }
+  100% {
+    background-position: 30px 20px, -20px 14px, 18px -10px;
+  }
+}
+.ink-dust {
+  background-image:
+    radial-gradient(circle, rgba(0, 0, 0, 0.28) 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(0, 0, 0, 0.18) 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.9) 1px, transparent 1.6px);
+  background-size:
+    14px 14px,
+    19px 19px,
+    23px 23px;
+  animation: ink-drift 3s linear infinite;
+  opacity: 0.9;
+}

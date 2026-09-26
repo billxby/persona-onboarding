@@ -12,12 +12,13 @@ import {
   type Channel,
   type ChatMessage,
   type Phase,
+  type ReactionKind,
   type Screen,
   type SessionEvent,
   type Slot,
   type SlotKey,
   type Slots,
-  type Tapback,
+  sameReaction,
 } from "./types";
 
 /**
@@ -41,12 +42,17 @@ export interface SessionState {
 
   events: SessionEvent[];
   screen: Screen;
+  /**
+   * Whether the user saved Persona to Contacts. Gates App Clip cards and, on a
+   * real device, link tappability. Starts false: Persona is a brand-new sender.
+   */
+  senderInContacts: boolean;
 
   // ----- actions -----
   appendMessage: (m: Omit<ChatMessage, "id" | "ts"> & Partial<Pick<ChatMessage, "id" | "ts">>) => ChatMessage;
   updateMessage: (id: string, patch: Partial<ChatMessage>) => void;
   /** Add or remove a tapback. Returns true if it was added. */
-  toggleReaction: (messageId: string, kind: Tapback, by: "user" | "assistant") => boolean;
+  toggleReaction: (messageId: string, kind: ReactionKind, by: "user" | "assistant") => boolean;
   /** Mark every delivered message from `role` as read (iMessage read receipts). */
   markRead: (role: "user" | "assistant") => void;
   setTyping: (typing: boolean) => void;
@@ -66,6 +72,7 @@ export interface SessionState {
 
   logEvent: (type: string, payload?: Record<string, unknown>) => void;
   setScreen: (screen: Screen) => void;
+  setSenderInContacts: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -83,6 +90,7 @@ const freshSession = () => ({
   captions: [] as CaptionLine[],
   events: [] as SessionEvent[],
   screen: "messages" as Screen,
+  senderInContacts: false,
 });
 
 export const SESSION_STORAGE_KEY = "persona-onboarding-session";
@@ -107,12 +115,12 @@ export const useSessionStore = create<SessionState>()(
             const existing = (m.reactions ?? []).filter((r) => r.by !== by);
             const mine = (m.reactions ?? []).find((r) => r.by === by);
             // iOS: one tapback per person per message; tapping the same one removes it
-            if (mine?.kind === kind) return { ...m, reactions: existing };
+            if (mine && sameReaction(mine.kind, kind)) return { ...m, reactions: existing };
             added = true;
             return { ...m, reactions: [...existing, { kind, by, ts: Date.now() }] };
           }),
         }));
-        get().logEvent(added ? "reaction.added" : "reaction.removed", { messageId, kind, by });
+        get().logEvent(added ? "reaction.added" : "reaction.removed", { messageId, ...kind, by });
         return added;
       },
       markRead: (role) => {
@@ -164,6 +172,10 @@ export const useSessionStore = create<SessionState>()(
       logEvent: (type, payload) =>
         set((s) => ({ events: [...s.events, { id: uid(), ts: Date.now(), type, payload }].slice(-500) })),
       setScreen: (screen) => set({ screen }),
+      setSenderInContacts: (senderInContacts) => {
+        set({ senderInContacts });
+        get().logEvent(senderInContacts ? "contact.added" : "contact.removed");
+      },
 
       reset: () => set({ ...freshSession() }),
     }),
@@ -182,6 +194,7 @@ export const useSessionStore = create<SessionState>()(
         captions: s.captions,
         events: s.events,
         screen: s.screen,
+        senderInContacts: s.senderInContacts,
       }),
     },
   ),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, Ellipsis, History, PhoneIncoming, RotateCcw, X } from "lucide-react";
+import { Database, Ellipsis, History, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -20,6 +20,8 @@ export function StageMenu() {
   const phase = useSessionStore((s) => s.phase);
   const callState = useSessionStore((s) => s.call.state);
   const messageCount = useSessionStore((s) => s.messages.length);
+  const senderInContacts = useSessionStore((s) => s.senderInContacts);
+  const setSenderInContacts = useSessionStore((s) => s.setSenderInContacts);
 
   useEffect(() => {
     if (!open) return;
@@ -63,6 +65,12 @@ export function StageMenu() {
                   callController.ring();
                   setOpen(false);
                 }}
+              />
+              <MenuButton
+                icon={senderInContacts ? UserRoundX : UserRoundPlus}
+                label={senderInContacts ? "Remove Persona from Contacts" : "Add Persona to Contacts"}
+                hint={senderInContacts ? "App Clip cards degrade to plain links" : "unlocks App Clip cards in the thread"}
+                onClick={() => setSenderInContacts(!senderInContacts)}
               />
               <MenuButton
                 icon={RotateCcw}
