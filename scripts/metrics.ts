@@ -57,7 +57,7 @@ const questionsIn = (text: string) => sentences(text).filter((s) => s.endsWith("
 function turnGroups(messages: MessageRow[]): { role: string; rows: MessageRow[] }[] {
   const groups: { role: string; rows: MessageRow[] }[] = [];
   for (const m of messages) {
-    if (m.kind !== "text" || (m.role !== "user" && m.role !== "assistant") || m.payload?.seeded) continue; // seeded "Hey Persona" is not a typed turn
+    if (m.kind !== "text" || (m.role !== "user" && m.role !== "assistant")) continue;
     const last = groups[groups.length - 1];
     if (last && last.role === m.role) last.rows.push(m);
     else groups.push({ role: m.role, rows: [m] });

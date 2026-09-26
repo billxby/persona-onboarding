@@ -2,7 +2,8 @@
 
 import { session } from "@/lib/session/store";
 import type { BubbleEffect, CallEndReason, LinkPreview, ReactionKind } from "@/lib/session/types";
-import { USER_HELLO } from "@/lib/shared/text";
+import { APP_CLIP_CARD, clipUrl } from "@/lib/shared/clip";
+import { OPENER_ASK, OPENER_INTRO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import type { OnboardingBrain } from "./types";
 
@@ -15,6 +16,16 @@ const GMAIL_LINK: LinkPreview = {
   appClip: { appName: "Persona", title: "Set up your Persona", subtitle: "Connect Gmail · read-only", verb: "Open" },
 };
 
+/** The "Meet your Persona" App Clip card the opener sends; its web fallback is /clip on this origin. */
+const clipLink = (): LinkPreview => ({
+  url: clipUrl(window.location.origin),
+  domain: window.location.host,
+  title: APP_CLIP_CARD.title,
+  description: APP_CLIP_CARD.subtitle,
+  imageUrl: `${window.location.origin}/clip/og.png`,
+  appClip: { appName: APP_CLIP_CARD.app_name, title: APP_CLIP_CARD.title, subtitle: APP_CLIP_CARD.subtitle, verb: APP_CLIP_CARD.verb },
+});
+
 /**
  * Canned, deterministic stand-in for the LLM so the UI can be exercised
  * end-to-end. It only ever produces content a real iMessage sender can:
@@ -24,7 +35,7 @@ const GMAIL_LINK: LinkPreview = {
 export class MockBrain implements OnboardingBrain {
   private opening = false;
   /** what the last assistant question was about, so short replies ("yes") make sense */
-  private pending: "call_or_text" | "call_back" | "gmail" | null = null;
+  private pending: "call_or_text" | "call_back" | "gmail" | "need" | null = null;
 
   private async say(text: string, opts: { delayMs?: number; effect?: BubbleEffect } = {}) {
     await sleep(650);
@@ -57,17 +68,18 @@ export class MockBrain implements OnboardingBrain {
     s.setScreen("call");
   }
 
-  async start() {
-    if (this.opening || session.get().messages.length > 0) return;
+  /** Nothing to do on an empty thread: the compose field holds the prefilled "Hey Persona"; sending it starts things. */
+  async start() {}
+
+  /** The first text (normally the prefilled hello) gets the opener the way the server sends it: intro, App Clip card, ask. */
+  private async open() {
+    if (this.opening) return;
     this.opening = true;
     try {
-      // you text first (the start link prefills it); the mock replies the way the server would
-      session.get().appendMessage({ role: "user", content: { kind: "text", text: USER_HELLO }, status: "delivered" });
-      await this.say(
-        "Hey, I'm your new Persona 👋 I'll get you set up by doing something useful, not by asking a bunch of questions. Want me to give you a quick call, or just text?",
-        { delayMs: 900 },
-      );
-      this.pending = "call_or_text";
+      await this.say(OPENER_INTRO, { delayMs: 900 });
+      await this.sendLink(clipLink());
+      await this.say(OPENER_ASK, { delayMs: 700 });
+      this.pending = "need";
     } finally {
       this.opening = false;
     }
@@ -76,6 +88,7 @@ export class MockBrain implements OnboardingBrain {
   async onUserText(text: string) {
     const s = session.get();
     s.logEvent("user.text", { text });
+    if (!s.messages.some((m) => m.role === "assistant")) return this.open();
     const t = text.trim().toLowerCase();
     const yes = /^(y|ya|yes|yeah|yep|sure|ok|okay|please|do it|go ahead)\b/.test(t);
     const no = /^(n|no|nah|nope|not now|later)\b/.test(t);
@@ -123,6 +136,14 @@ export class MockBrain implements OnboardingBrain {
     }
     if (/\bslam\b/.test(t)) {
       await this.say("Like this?", { effect: "slam", delayMs: 500 });
+      return;
+    }
+    if (this.pending === "need") {
+      this.pending = null;
+      const need = text.trim();
+      s.setSlot("need", { status: "filled", value: need });
+      s.setPhase("collecting");
+      await this.say(`On it: ${need}. Quick one so I know who I'm working for, what should I call you?`, { delayMs: 700 });
       return;
     }
     await this.say('(mock) The real brain isn\'t wired up yet. Try "call me", "connect gmail", or "slam" to see the effect.');

@@ -1,9 +1,8 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/server/db";
-import { insertEvent, listMessages, sessionView } from "@/lib/server/messages";
+import { insertEvent, listEvents, sessionView } from "@/lib/server/messages";
 import { createSession, isUuid, SESSION_COOKIE, sessionCookie } from "@/lib/server/session";
-import { seedOpening } from "@/lib/server/brain/chat";
 import type { CreateSessionRequest } from "@/lib/shared/types";
 
 const Body = z.object({
@@ -11,7 +10,7 @@ const Body = z.object({
   access_token: z.string().min(10).max(4096).optional(),
 });
 
-/** POST /api/session — create (idempotent on a client-proposed id), seed the opening (your "Hey Persona" + the opener), set the cookie. */
+/** POST /api/session — create (idempotent on a client-proposed id), set the cookie. The thread starts empty: the browser prefills "Hey Persona" in the compose field. */
 export async function POST(req: Request) {
   const raw = (await req.json().catch(() => ({}))) as CreateSessionRequest;
   const parsed = Body.safeParse(raw ?? {});
@@ -29,9 +28,7 @@ export async function POST(req: Request) {
   }
 
   const session = await createSession({ id, owner_uid });
-  const existing = await listMessages(session.id, { limit: 1 });
-  if (existing.length === 0) {
-    await seedOpening(session.id);
+  if ((await listEvents(session.id, ["session_created"])).length === 0) {
     await insertEvent(session.id, "session_created", { owner_uid: !!owner_uid, proposed_id: !!id });
   }
 

@@ -42,7 +42,13 @@ let bubbles = [];
 let n = 0;
 try {
   await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".bubble-in[data-bubble]", { timeout: 30_000 });
+  // the thread starts empty with "Hey Persona" prefilled in the compose field; sending it gets the opener
+  await page.waitForFunction(() => (document.querySelector("textarea")?.value ?? "").length > 0, null, { timeout: 30_000 });
+  log("draft:", await page.$eval("textarea", (t) => t.value));
+  await page.click("[aria-label='Send']");
+  await page.waitForSelector(".bubble-in[data-bubble]", { timeout: 60_000 });
+  // the opener is three messages (intro, App Clip card, ask); wait for the ask so later counts start clean
+  await page.waitForFunction(() => document.querySelectorAll(".bubble-in[data-bubble]").length >= 2, null, { timeout: 60_000 });
   bubbles = await inTexts();
   log("opener:", bubbles[0]);
   log("state:", JSON.stringify(await state()));

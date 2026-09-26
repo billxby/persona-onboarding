@@ -48,8 +48,9 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
 
 ## How a session runs
 
-1. The thread opens with your prefilled "Hey Persona" already sent and the bot's fixed reply: "Hey, I'm your
-   Persona. Tell me one thing you want off your plate this week, or I can call you and we'll knock it out live."
+1. The thread opens empty with "Hey Persona" prefilled in the compose field, unsent. Sending it gets the bot's
+   fixed opener, three bubbles: "Hey! I'm your new personal assistant. Tap below to see what I can do ;)", the
+   Meet your Persona App Clip card, then "So, what's something you want to take off your plate this week?"
    Two exits: type, or ring the phone.
 2. Every user turn goes through slot extraction via tools, whatever was asked. A stated need flips
    `mode` to `main` immediately: the task starts and the missing slots become soft, once-per-session nudges.
@@ -84,7 +85,7 @@ Supabase: sessions, messages, events, oauth_tokens, memory_events, beliefs; Stor
 
 | Route | Purpose |
 |---|---|
-| `POST /api/session`, `GET /api/session/[id]?after=` | Create (idempotent on a client-proposed id; seeds the opening (your "Hey Persona" + the opener); sets the `persona_sid` cookie) and catch up. Catch-up also runs lazy drop detection |
+| `POST /api/session`, `GET /api/session/[id]?after=` | Create (idempotent on a client-proposed id; sets the `persona_sid` cookie; the thread starts empty) and catch up. Catch-up also runs lazy drop detection |
 | `POST /api/messages` | Persist a user bubble or tapback immediately; reports `call_live` so the client can interrupt the call |
 | `POST /api/chat` | One assistant turn as an NDJSON stream: `typing`, `tool`, `message` per bubble (400–900 ms typing pauses), `session`, `beliefs`, `done`. Triggers: `user`, `open`, `call_ended`, `dropped`, `voicemail`, `gmail_connected`, `gmail_declined`, `welcome_back`, `silence_end` |
 | `POST /api/realtime/token`, `GET /api/realtime/instructions` | Mint the short-lived Realtime client secret with the call prompt and the tool schemas; re-fetch instructions after state changes |
