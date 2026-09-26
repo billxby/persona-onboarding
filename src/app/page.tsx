@@ -1,20 +1,18 @@
 import { Simulator } from "@/components/Simulator";
+import { StageMenu } from "@/components/stage/StageMenu";
 
 export default function Page() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1100px] flex-col gap-6 px-6 py-8">
-      <header className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-[20px] font-semibold tracking-tight">Persona onboarding simulator</h1>
-          <p className="text-[13px] text-black/55">
-            Layer 1: iMessage + call wrappers. UI only. The brain and voice transport are mocks behind swappable interfaces.
-          </p>
-        </div>
-        <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-medium text-violet-800">
-          mock brain · mock voice
-        </span>
-      </header>
-      <Simulator />
+    <main className="relative h-dvh w-full overflow-hidden bg-[#ececf1]">
+      {/* focused backdrop */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,#ffffff_0%,#ececf1_45%,#dcdce3_100%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[900px] w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(25,130,252,0.10)_0%,rgba(25,130,252,0)_60%)]" />
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Simulator />
+      </div>
+
+      <StageMenu />
     </main>
   );
 }

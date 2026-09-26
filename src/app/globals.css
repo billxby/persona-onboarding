@@ -28,6 +28,8 @@ body {
 
 /* ---------- iMessage bubble tails ---------- */
 .bubble {
+  user-select: none;
+  -webkit-user-select: none;
   position: relative;
   max-width: 78%;
   padding: 7px 12px;

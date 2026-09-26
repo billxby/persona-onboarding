@@ -1,7 +1,7 @@
 "use client";
 
 import { session } from "@/lib/session/store";
-import type { CallEndReason, MessageCard } from "@/lib/session/types";
+import type { CallEndReason, MessageCard, Tapback } from "@/lib/session/types";
 import { sleep } from "@/lib/utils";
 import type { OnboardingBrain } from "./types";
 
@@ -11,8 +11,13 @@ import type { OnboardingBrain } from "./types";
  * `mock.` so nobody mistakes this for the real thing.
  */
 export class MockBrain implements OnboardingBrain {
+  private opening = false;
+
   private async say(text: string, opts: { card?: MessageCard; delayMs?: number } = {}) {
+    // Delivered → (beat) → Read → typing, like a real thread.
+    await sleep(650);
     const s = session.get();
+    s.markRead("user");
     s.setTyping(true);
     await sleep(opts.delayMs ?? Math.min(2200, 500 + text.length * 18));
     const st = session.get();
@@ -30,8 +35,16 @@ export class MockBrain implements OnboardingBrain {
   }
 
   async start() {
-    const s = session.get();
-    if (s.messages.length > 0) return;
+    if (this.opening || session.get().messages.length > 0) return;
+    this.opening = true;
+    try {
+      await this.opener();
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  private async opener() {
     await this.say(
       "Hey, I'm your new Persona 👋 I'll get you set up by doing something useful, not by asking a bunch of questions. Want me to give you a quick call, or just text?",
       {
@@ -58,6 +71,12 @@ export class MockBrain implements OnboardingBrain {
       this.ring();
       return;
     }
+    if (/\b(thanks|thank you|ty)\b/.test(t)) {
+      const last = [...s.messages].reverse().find((m) => m.role === "user");
+      await sleep(700);
+      if (last) session.get().toggleReaction(last.id, "heart", "assistant");
+      return;
+    }
     if (/\b(skip|stop|later)\b/.test(t)) {
       await this.say("Sure. I've saved what we have. Text me anytime.");
       return;
@@ -65,6 +84,19 @@ export class MockBrain implements OnboardingBrain {
     await this.say(
       "(mock) The real brain isn't wired up yet. Try \"call me\" to test the call flow, or use the inspector to drive state.",
     );
+  }
+
+  async onUserReaction(messageId: string, kind: Tapback, added: boolean) {
+    const s = session.get();
+    s.logEvent("user.reaction", { messageId, kind, added });
+    // A tiny bit of personality: a heart back on the first heart you send.
+    if (added && kind === "heart" && !s.messages.some((m) => m.reactions?.some((r) => r.by === "assistant"))) {
+      const lastUser = [...s.messages].reverse().find((m) => m.role === "user");
+      if (lastUser) {
+        await sleep(900);
+        session.get().toggleReaction(lastUser.id, "heart", "assistant");
+      }
+    }
   }
 
   async onCardAction(actionId: string, messageId: string) {

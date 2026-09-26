@@ -59,13 +59,28 @@ export interface MessageCard {
   takenActionId?: string;
 }
 
+/** iMessage tapbacks. */
+export type Tapback = "heart" | "thumbsUp" | "thumbsDown" | "haha" | "exclaim" | "question";
+export const TAPBACKS: Tapback[] = ["heart", "thumbsUp", "thumbsDown", "haha", "exclaim", "question"];
+
+export interface Reaction {
+  kind: Tapback;
+  by: "user" | "assistant";
+  ts: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   text: string;
   ts: number;
   status?: "sending" | "delivered" | "read";
+  /** when the other side read it (shown as "Read 6:21 PM") */
+  readAt?: number;
   card?: MessageCard;
+  reactions?: Reaction[];
+  /** inline reply: id of the message this one answers */
+  replyToId?: string;
 }
 
 export interface CaptionLine {
