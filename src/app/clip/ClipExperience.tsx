@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ChevronRight, Mail, PenLine, Phone, Scissors, ShieldCheck, Sparkles } from "lucide-react";
+import { CalendarDays, ChevronRight, Mail, PenLine, Phone, Scissors, ShieldCheck } from "lucide-react";
 import type { ClipContent, ClipFeatureIcon } from "@/lib/shared/clip";
 import type { z } from "zod";
 import { TryIt } from "./TryIt";
@@ -59,10 +59,10 @@ export function ClipExperience({ content, sid, embed }: { content: ClipContent; 
       {!embed && (
         <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-black/[0.06] bg-[#f2f2f7]/85 px-5 py-3 backdrop-blur-xl">
           <div className="flex items-center gap-2 text-[15px] font-semibold">
-            <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-[#8e8e93] to-[#636366] text-white">
-              <Sparkles className="h-4 w-4" strokeWidth={2} />
-            </span>
-            Persona
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/persona-icon-512.png" alt="" className="h-7 w-7 rounded-[8px] ring-1 ring-black/[0.08]" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/persona-wordmark.svg" alt="Persona" className="h-[16px] w-auto" />
           </div>
           <a {...cta("nav-start", startUrl)} className="text-[15px] font-medium text-[#1982fc]">
             Open in Messages
@@ -73,9 +73,16 @@ export function ClipExperience({ content, sid, embed }: { content: ClipContent; 
       <main className={embed ? "mx-auto max-w-[560px] px-4 pb-10 pt-4" : "mx-auto max-w-[560px] px-4 pb-16 pt-8"}>
         {/* hero */}
         <section data-clip="hero" className="mb-6">
+          {content.hero.image && (
+            <div className="mb-4 overflow-hidden rounded-[18px] bg-white ring-1 ring-black/[0.06]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={content.hero.image} alt="Persona Band" className="h-[220px] w-full object-cover object-right" />
+            </div>
+          )}
           <div className="mb-3 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-black/40">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/persona-wordmark.svg" alt="Persona" className="h-[14px] w-auto opacity-80" />
             <span className="rounded-full bg-black/[0.06] px-2 py-0.5">App Clip</span>
-            <span>v{content.version}</span>
           </div>
           <h1 className="text-[34px] font-bold leading-[40px] tracking-[-0.4px]">{content.hero.title}</h1>
           <p className="mt-2 text-[17px] leading-[23px] text-black/60">{content.hero.subtitle}</p>
@@ -111,10 +118,25 @@ export function ClipExperience({ content, sid, embed }: { content: ClipContent; 
         {/* wristband */}
         <SectionTitle>The wristband</SectionTitle>
         <section data-clip="wristband" className="overflow-hidden rounded-[18px] bg-white shadow-[0_1px_0_rgba(0,0,0,0.04)]">
-          <div className="bg-gradient-to-b from-[#f7f7fa] to-white px-6 pt-4">
+          <div className="bg-[#0b0b0c]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bandImage} alt={content.wristband.name} className="mx-auto h-[190px] w-full max-w-[420px] object-contain" />
+            <img src={bandImage} alt={content.wristband.name} className="h-[230px] w-full object-cover" />
           </div>
+          {content.wristband.gallery && content.wristband.gallery.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto px-4 pt-3 [scrollbar-width:none]">
+              {content.wristband.gallery.map((g) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={g} src={g} alt="" className="h-[72px] w-[96px] shrink-0 rounded-[10px] object-cover ring-1 ring-black/[0.06]" />
+              ))}
+            </div>
+          )}
+          {content.wristband.colors && (
+            <div className="flex flex-wrap gap-1.5 px-5 pt-3">
+              {content.wristband.colors.map((c) => (
+                <span key={c} className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[12px] font-medium text-black/65">{c}</span>
+              ))}
+            </div>
+          )}
           <div className="px-5 pb-5 pt-2">
             <div className="text-[20px] font-bold leading-tight">{content.wristband.name}</div>
             <div className="mt-0.5 text-[15px] font-medium text-[#1982fc]">{content.wristband.tagline}</div>

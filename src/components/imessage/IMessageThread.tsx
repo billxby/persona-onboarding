@@ -31,6 +31,7 @@ export function IMessageThread({
   onOpenLink,
   onOpenAppClip,
   onCloseAppClip,
+  onOpenInSafari,
 }: {
   contactName: string;
   senderInContacts: boolean;
@@ -42,6 +43,8 @@ export function IMessageThread({
   /** The user tapped Open on an App Clip card: the clip now runs inside the phone. */
   onOpenAppClip?: (messageId: string, url: string) => void;
   onCloseAppClip?: (messageId: string, url: string) => void;
+  /** A plain link (no App Clip card) was tapped: open it in the in-phone Safari sheet. */
+  onOpenInSafari?: (messageId: string, url: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,12 +84,25 @@ export function IMessageThread({
   }, []);
   const closeActions = () => setActions(null);
 
+  // Tap on a link bubble, the way iOS resolves it: the Gmail connect page is an OAuth popup
+  // (Google refuses iframes); an App Clip link with the sender in Contacts shows the App Clip
+  // card (handled by LinkBubble's Open button); everything else opens in the in-phone Safari.
   const openLink = useCallback(
     (id: string) => {
       const m = byId.get(id);
-      if (m?.content?.kind === "link") onOpenLink(id, m.content.link.url);
+      if (m?.content?.kind !== "link") return;
+      const url = m.content.link.url;
+      if (isConnectUrl(url) || !onOpenInSafari) {
+        onOpenLink(id, url);
+        return;
+      }
+      if (m.content.link.appClip && senderInContacts) {
+        setAppClipFor(id);
+        return;
+      }
+      onOpenInSafari(id, url);
     },
-    [byId, onOpenLink],
+    [byId, onOpenLink, onOpenInSafari, senderInContacts],
   );
 
   const replyTarget: ReplyTarget | null = useMemo(() => {
@@ -212,6 +228,14 @@ export function IMessageThread({
       </AnimatePresence>
     </div>
   );
+}
+
+function isConnectUrl(url: string) {
+  try {
+    return new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost").pathname === "/connect";
+  } catch {
+    return false;
+  }
 }
 
 /** iOS separator text: "Today 6:21 PM", "Yesterday 6:21 PM", "Mon, Sep 22 at 6:21 PM". */

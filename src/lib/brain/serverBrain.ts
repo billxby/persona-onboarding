@@ -369,12 +369,12 @@ export class ServerBrain implements OnboardingBrain {
       return;
     }
     if (u && u.origin === window.location.origin && u.pathname === "/clip") {
-      // Sender not in Contacts (or the card degraded): the App Clip URL is a normal web page.
+      // Sender not in Contacts (or the card degraded): the App Clip URL is a normal web page,
+      // which the simulator opens in its in-phone Safari sheet. Just record the fallback.
       this.postClientEvent("app_clip_fallback_web", { messageId, url: u.toString() });
-      window.open(u.toString(), "_blank", "noopener");
       return;
     }
-    window.open(url, "_blank", "noopener");
+    // Every other link is shown by the phone's Safari sheet (Simulator); nothing leaves the phone.
   }
 
   /** Client-side UI events the server should know about (App Clip card, runner, CTAs). */

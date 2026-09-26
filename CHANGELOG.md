@@ -242,3 +242,21 @@ plain preview, fallback page with the banner meta).
 
 Not built, by design: publishing. The real Messages card needs an Apple team, a parent app, App Store review, and the
 sender in the recipient's Contacts. Product copy in the JSON is a draft.
+
+## 11. App Clip polish: opens on the phone, real Persona brand (third commit, 2026-09-26)
+
+- Every link the bot sends now stays inside the simulated phone, the way iOS does it: with Persona in Contacts the
+  App Clip bubble → system card → in-phone clip; otherwise (and for the summary card) an in-phone Safari sheet
+  (`src/components/phone/SafariSheet.tsx`, SFSafariViewController look: Done, host pill, iframe, toolbar). The only
+  remaining popup is the Gmail connect page, because Google OAuth refuses to run inside an iframe.
+- Brand assets pulled from yourpersona.com/band into `public/brand/`: the Persona mark (icon PNG/SVG), the wordmark
+  (extracted from the site's inline SVG), the social image with the three bands (now the clip hero, the App Clip card
+  header and the OG image), the lifestyle and product band photos. `PersonaAvatar` renders the real mark everywhere
+  (thread header, contact card, App Clip card, launch splash).
+- `data/clip_content.json` rewritten with the site's own copy: "First AI assistant you can wear.", the use cases
+  (life admin, secretary, chief of staff, household, personal CFO), band specs (two mics, LED ring, three days of
+  battery, 30-minute charge, water-resistant, magnetic snap, privacy mode), the four colours, "Pre-order Band" with
+  free shipping / 30-day money-back / 1-year warranty, and the privacy claims. Schema gained optional `hero.image`,
+  `hero.eyebrow`, `wristband.gallery`, `wristband.colors`. The native scaffold's bundled copy was refreshed.
+- `devIndicators: false` so Next's dev badge no longer floats inside the phone or the embedded clip.
+

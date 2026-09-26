@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
 import { useSessionStore } from "@/lib/session/store";
@@ -11,8 +11,8 @@ import { CallScreen } from "@/components/call/CallScreen";
 import { CallBanner } from "@/components/imessage/CallBanner";
 import { IMessageThread } from "@/components/imessage/IMessageThread";
 import { PhoneFrame } from "@/components/phone/PhoneFrame";
+import { SafariSheet } from "@/components/phone/SafariSheet";
 import { PHONE_H, PHONE_W, usePhoneScale } from "@/components/phone/usePhoneScale";
-import { ProgressBar } from "@/components/progress/ProgressBar";
 
 /**
  * The phone: iMessage thread with the call screen overlaid when a call is
@@ -33,6 +33,8 @@ export function Simulator() {
   const updateMessage = useSessionStore((s) => s.updateMessage);
   const toggleReaction = useSessionStore((s) => s.toggleReaction);
   const senderInContacts = useSessionStore((s) => s.senderInContacts);
+
+  const [safariUrl, setSafariUrl] = useState<string | null>(null);
 
   const contactName = agentName || "Persona";
   const callActive = call.state === "connecting" || call.state === "live";
@@ -76,6 +78,12 @@ export function Simulator() {
   };
 
   const onOpenLink = (messageId: string, url: string) => void getBrain().onLinkOpen(messageId, url);
+  // Plain links open in the in-phone Safari sheet, never in a browser tab. The brain still
+  // records the tap (and the App Clip web fallback) without opening anything itself.
+  const onOpenInSafari = (messageId: string, url: string) => {
+    void getBrain().onLinkOpen(messageId, url);
+    setSafariUrl(url);
+  };
   // App Clip cards run inside the phone (AppClipRunner); the brain only records the event.
   const onOpenAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_opened", { messageId, url });
   const onCloseAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_closed", { messageId, url });
@@ -87,7 +95,6 @@ export function Simulator() {
 
   return (
     <div style={{ width: PHONE_W * scale, height: PHONE_H * scale }} className="relative">
-      {hydrated && <ProgressBar />}
       <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }} className="absolute left-0 top-0">
         <PhoneFrame dark={showCall}>
           {!hydrated ? null : (
@@ -109,7 +116,9 @@ export function Simulator() {
                     onOpenLink={onOpenLink}
                     onOpenAppClip={onOpenAppClip}
                     onCloseAppClip={onCloseAppClip}
+                    onOpenInSafari={onOpenInSafari}
                   />
+                  <AnimatePresence>{safariUrl && <SafariSheet key={safariUrl} url={safariUrl} onClose={() => setSafariUrl(null)} />}</AnimatePresence>
                 </motion.div>
               )}
             </AnimatePresence>

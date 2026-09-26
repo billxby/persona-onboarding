@@ -328,7 +328,7 @@ Citations for the README: [Zep temporal knowledge graph](https://arxiv.org/abs/2
 
 1. Phone frame: header (number → agent name after naming), thread, composer. Bubbles: text, tapback, link card (Connect Gmail), contact card, voicemail with transcription, call log entry, summary card.
 2. Call screen: incoming call with Accept/Decline, live captions, mute, hang up, "switch to text."
-3. Progress chips above the thread: You · Your need · Gmail · My name. Fill live via Realtime; clickable to edit; never presented as a form.
+3. Checklist to the right of the phone: You · Your need · Gmail · My name, done or not, labels only (values live in the brain view). Fills live via Realtime; a row tap edits; never presented as a form. Top-right: light/dark toggle for the stage chrome.
 4. Brain view (small side panel): active beliefs with confidence and reason, last `next_best_ask`, latency p50/p95.
 5. Buttons the evaluator will use anyway: hang up, decline, close tab, switch to text, "use demo inbox."
 

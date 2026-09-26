@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Meet your Persona",
     description: "What it does, the wristband, and how to get the full experience.",
-    images: ["/clip/og.svg"],
+    images: ["/clip/og.png"],
   },
   other: {
     // Smart App Banner: tells Safari/Messages which App Clip this page belongs to (App Store id and clip bundle id are deployment settings).

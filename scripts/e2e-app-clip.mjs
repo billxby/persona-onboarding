@@ -1,4 +1,4 @@
-// App Clip walkthrough against a running dev server: card in the thread → system card → clip runs in the phone → CTA → close → Contacts off = plain link.
+// App Clip walkthrough against a running dev server: card in the thread → system card → clip runs in the phone → CTA → close → Contacts off = plain link → in-phone Safari.
 // Usage: node scripts/e2e-app-clip.mjs [--base http://localhost:3000] [--out ./e2e-out]
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -55,7 +55,7 @@ try {
   const frame = page.frameLocator("[data-app-clip-runner] iframe");
   await frame.locator("[data-clip='hero'] h1").waitFor({ timeout: 20_000 });
   const heroTitle = await frame.locator("[data-clip='hero'] h1").textContent();
-  check(heroTitle?.trim() === "Meet your Persona", `runner iframe hero title: ${heroTitle}`);
+  check(!!heroTitle?.trim(), `runner iframe hero title: ${heroTitle}`);
   check(await page.locator("text=Persona · App Clip").count() > 0 || await page.locator("[data-app-clip-runner]").locator("text=App Clip").count() > 0, "App Clip top bar visible");
   await page.waitForTimeout(400);
   await shot(page, "runner-hero");
@@ -107,6 +107,21 @@ try {
   const plainLink = await page.locator("[data-bubble] button", { hasText: "Meet your Persona" }).count();
   check(openCount === 0 && plainLink >= 1, `Contacts off: plain link preview (Open buttons: ${openCount}, previews: ${plainLink})`);
   await shot(page, "plain-link");
+
+  // Tapping the plain preview opens the in-phone Safari sheet, never a browser tab
+  const pagesBefore = ctx.pages().length;
+  const outerUrl = page.url();
+  await page.locator("[data-bubble] button", { hasText: "Meet your Persona" }).last().click();
+  await page.waitForSelector("[data-safari-sheet]", { timeout: 8000 });
+  const doneVisible = await page.locator("[data-safari-sheet] >> text=Done").isVisible();
+  const safariSrc = (await page.locator("[data-safari-sheet] iframe").getAttribute("src")) ?? "";
+  await page.waitForTimeout(800);
+  check(doneVisible && safariSrc.includes("/clip"), `plain link opened in-phone Safari (Done visible, iframe ${safariSrc})`);
+  check(ctx.pages().length === pagesBefore && page.url() === outerUrl, "no new tab and the phone page stayed put");
+  await shot(page, "safari-sheet");
+  await page.locator("[data-safari-sheet] >> text=Done").click();
+  await page.waitForSelector("[data-safari-sheet]", { state: "detached", timeout: 8000 });
+  check(true, "Done closed the Safari sheet");
 
   // the web fallback itself renders at /clip
   const web = await ctx.newPage();

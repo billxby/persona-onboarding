@@ -12,7 +12,7 @@ const Cta = z.object({ label: z.string().min(1).max(40), url: z.string().url() }
 
 export const ClipContentSchema = z.object({
   version: z.string().min(1),
-  hero: z.object({ title: z.string().min(1).max(60), subtitle: z.string().min(1).max(140), cta: Cta }),
+  hero: z.object({ title: z.string().min(1).max(60), subtitle: z.string().min(1).max(140), cta: Cta, image: z.string().optional(), eyebrow: z.string().max(40).optional() }),
   features: z
     .array(z.object({ id: z.string().min(1), icon: ClipFeatureIcon, title: z.string().min(1).max(40), body: z.string().min(1).max(200) }))
     .min(1),
@@ -22,6 +22,8 @@ export const ClipContentSchema = z.object({
     body: z.string().min(1).max(400),
     bullets: z.array(z.string().min(1).max(120)).min(1),
     image: z.string().optional(),
+    gallery: z.array(z.string()).optional(),
+    colors: z.array(z.string().max(30)).optional(),
     how_to_get: z.object({ label: z.string().min(1).max(40), url: z.string().url(), note: z.string().max(120).optional() }),
   }),
   products: z

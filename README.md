@@ -177,11 +177,13 @@ What is real today:
 - Events `app_clip_card_shown`, `app_clip_opened`, `app_clip_closed`, `app_clip_cta`, `app_clip_demo`,
   `app_clip_fallback_web` land in `events` for metrics.
 
+Brand assets (mark, wordmark, band photos, social image) come from yourpersona.com and live in `public/brand/`.
+
 What the simulator shows: with Persona in Contacts (toggle in the stage menu or on `/db`) the card renders as the
 iOS App Clip bubble; tapping it opens the system card (header image, title, subtitle, Open, App Store line,
 8-hour notifications note); Open plays the launch splash and runs the clip full-frame inside the phone under a
-"Persona · App Clip" bar. Out of Contacts the same message is a plain link preview that opens `/clip` in a tab,
-exactly as iOS degrades it. `node scripts/e2e-app-clip.mjs` walks through all of it.
+"Persona · App Clip" bar. Out of Contacts the same message is a plain link preview that opens `/clip` in an in-phone
+Safari sheet, exactly as iOS degrades it. Nothing the bot sends leaves the phone except the Gmail consent popup. `node scripts/e2e-app-clip.mjs` walks through all of it.
 
 What it takes to see the card in real Messages: an Apple Developer team, a parent iOS app in App Store Connect with
 the App Clip target (bundle id `<parent>.Clip`), the associated domain on the production deployment, a default App

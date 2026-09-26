@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
+/* `dark:` utilities follow the attribute next-themes sets on <html>. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme inline {
+  /* stage chrome tokens: light values on :root, dark under [data-theme="dark"] */
+  --color-stage: var(--stage);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
   --color-imsg-blue: #1982fc;
   --color-imsg-gray: #e9e9eb;
   --color-imsg-text: #000000;
@@ -12,6 +20,25 @@
 
 :root {
   --screen-bg: #ffffff;
+  --stage: #ececf1;
+  --stage-hi: #ffffff;
+  --stage-lo: #dcdce3;
+  --panel: #ffffff;
+  --line: rgba(0, 0, 0, 0.1);
+  --ink: #111111;
+}
+[data-theme="dark"] {
+  --stage: #17171a;
+  --stage-hi: #26262b;
+  --stage-lo: #0c0c0e;
+  --panel: #1f1f23;
+  --line: rgba(255, 255, 255, 0.12);
+  --ink: #f2f2f5;
+}
+
+/* the simulator stage behind the phone */
+.stage-backdrop {
+  background: radial-gradient(ellipse at 50% 40%, var(--stage-hi) 0%, var(--stage) 45%, var(--stage-lo) 100%);
 }
 
 html,

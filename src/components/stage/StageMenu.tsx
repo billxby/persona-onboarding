@@ -82,12 +82,12 @@ export function StageMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            className="w-[300px] overflow-hidden rounded-2xl border border-black/10 bg-white/90 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            className="w-[300px] overflow-hidden rounded-2xl border border-line bg-panel/90 text-ink shadow-[0_20px_60px_-15px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
             <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
               <div>
                 <div className="text-[13px] font-semibold">Simulation</div>
-                <div className="font-mono text-[11px] text-black/45">
+                <div className="font-mono text-[11px] text-ink/45">
                   {sessionId.slice(0, 8)} · {phase} · {messageCount} msgs
                 </div>
               </div>
@@ -156,13 +156,13 @@ export function StageMenu() {
               />
             </div>
 
-            <div className="border-t border-black/10 px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/40">
+            <div className="border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
               <span className="flex items-center gap-1.5">
                 <History className="h-3 w-3" /> Previous runs
               </span>
             </div>
             <div className="max-h-[200px] overflow-y-auto px-2 pb-2">
-              {runs.length === 0 && <div className="px-2 py-2 text-[12px] text-black/40">None yet. Restart to archive this one.</div>}
+              {runs.length === 0 && <div className="px-2 py-2 text-[12px] text-ink/40">None yet. Restart to archive this one.</div>}
               {runs.slice(0, 8).map((r) => (
                 <button
                   key={r.id}
@@ -170,13 +170,13 @@ export function StageMenu() {
                     restoreRun(r.id);
                     setOpen(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-black/5"
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-ink/5"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-[13px]">
                       {r.slots.user_name.value ? `${r.slots.user_name.value}` : "Anonymous"} · {r.messages.length} msgs
                     </div>
-                    <div className="text-[11px] text-black/45">
+                    <div className="text-[11px] text-ink/45">
                       {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {r.phase}
                     </div>
                   </div>
@@ -197,8 +197,8 @@ export function StageMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-label="Simulation menu"
         className={cn(
-          "flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white/90 text-black/70 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.35)] backdrop-blur-xl transition hover:bg-white",
-          open && "bg-black text-white hover:bg-black",
+          "flex h-11 w-11 items-center justify-center rounded-full border border-line bg-panel/90 text-ink/70 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.35)] backdrop-blur-xl transition hover:bg-panel",
+          open && "bg-ink text-panel hover:bg-ink",
         )}
       >
         {open ? <X className="h-5 w-5" /> : <Ellipsis className="h-5 w-5" />}
@@ -209,11 +209,11 @@ export function StageMenu() {
 
 function MenuLink({ href, icon: Icon, label, hint }: { href: string; icon: React.ComponentType<{ className?: string }>; label: string; hint?: string }) {
   return (
-    <Link href={href} target="_blank" className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-black/5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-black/5"><Icon className="h-4 w-4" /></span>
+    <Link href={href} target="_blank" className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-ink/5">
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/5"><Icon className="h-4 w-4" /></span>
       <span className="min-w-0">
         <span className="block text-[13px] font-medium">{label}</span>
-        {hint && <span className="block text-[11px] text-black/45">{hint}</span>}
+        {hint && <span className="block text-[11px] text-ink/45">{hint}</span>}
       </span>
     </Link>
   );
@@ -233,11 +233,11 @@ function MenuButton({
   disabled?: boolean;
 }) {
   return (
-    <button onClick={onClick} disabled={disabled} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-black/5 disabled:opacity-40 disabled:hover:bg-transparent">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-black/5"><Icon className="h-4 w-4" /></span>
+    <button onClick={onClick} disabled={disabled} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-ink/5 disabled:opacity-40 disabled:hover:bg-transparent">
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/5"><Icon className="h-4 w-4" /></span>
       <span className="min-w-0">
         <span className="block text-[13px] font-medium">{label}</span>
-        {hint && <span className="block text-[11px] text-black/45">{hint}</span>}
+        {hint && <span className="block text-[11px] text-ink/45">{hint}</span>}
       </span>
     </button>
   );

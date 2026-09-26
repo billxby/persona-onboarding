@@ -1,44 +1,136 @@
 {
-  "_note": "Draft copy for the App Clip, the /clip page and the bot. Edit freely.",
-  "version": "2026-09-26.1",
+  "_note": "Copy and imagery pulled from yourpersona.com/band on 2026-09-26 (headline, use cases, band specs, privacy claims). Edit freely; the App Clip, the /clip page and the bot all read this file.",
+  "version": "1.1",
   "hero": {
-    "title": "Meet your Persona",
-    "subtitle": "An assistant that earns its keep in the first minute: it does one real thing for you, then keeps going.",
-    "cta": { "label": "Start in Messages", "url": "https://yourpersona.com/start" }
+    "eyebrow": "Persona",
+    "title": "First AI assistant you can wear.",
+    "subtitle": "Made to get things done. Say what you need and your Persona handles the rest: no prompts to learn, nothing to set up.",
+    "cta": {
+      "label": "Start in Messages",
+      "url": "https://yourpersona.com/start"
+    },
+    "image": "/brand/og-band.png"
   },
   "features": [
-    { "id": "triage", "icon": "mail", "title": "Inbox triage", "body": "Read-only look at what actually needs you: who's waiting on a reply, what's a bill, what can wait." },
-    { "id": "drafts", "icon": "pen", "title": "Drafts you approve", "body": "It writes the reply in your voice and shows it to you. Nothing is ever sent without your yes." },
-    { "id": "cancel", "icon": "scissors", "title": "Cancel subscriptions", "body": "Finds the renewal email, the cancellation terms and the deadline, then drafts the note." },
-    { "id": "book", "icon": "calendar", "title": "Book appointments", "body": "Dentist, mechanic, haircut: it finds the confirmation emails and lines up the next step." },
-    { "id": "call", "icon": "phone", "title": "A real phone call", "body": "Two minutes on the phone gets everything set up. Hang up any time; it picks up in the chat." },
-    { "id": "private", "icon": "shield", "title": "Read-only and private", "body": "Gmail access is read-only, you can disconnect in one tap, and it never asks for more than the task needs." }
+    {
+      "id": "life-admin",
+      "icon": "calendar",
+      "title": "Life admin",
+      "body": "Handles the returns, forms and appointments you keep putting off."
+    },
+    {
+      "id": "secretary",
+      "icon": "mail",
+      "title": "The secretary",
+      "body": "Reads what came in, drafts the replies, and only asks you when it matters."
+    },
+    {
+      "id": "chief-of-staff",
+      "icon": "phone",
+      "title": "Chief of staff",
+      "body": "Sits on hold, argues the fee, and calls back until it's sorted."
+    },
+    {
+      "id": "household",
+      "icon": "pen",
+      "title": "The household",
+      "body": "Books the dentist, orders the groceries, keeps the family on schedule."
+    },
+    {
+      "id": "personal-cfo",
+      "icon": "scissors",
+      "title": "Personal CFO",
+      "body": "Finds the subscriptions you forgot and cancels them before they renew."
+    },
+    {
+      "id": "private",
+      "icon": "shield",
+      "title": "Private by design",
+      "body": "Encrypted at rest, independently audited, never sold. Export or wipe everything in one tap."
+    }
   ],
   "wristband": {
     "name": "Persona Band",
-    "tagline": "Talk to your Persona with a press.",
-    "body": "A screenless wristband for the moments your phone is in your pocket. Press to talk, feel a buzz when a reply or a reminder lands. No display, no notifications to manage, a battery that lasts about a week.",
+    "tagline": "The world's smartest band.",
+    "body": "A screenless aluminium band that hears you, understands what you said, and hands the task to your Persona in the time it takes to say it. No wake word, no app to open. One ring of light tells you where your task is: listening, working, done.",
     "bullets": [
-      "Press and hold to talk; let go to send",
-      "A short buzz when your Persona replies or a reminder is due",
-      "About a week between charges",
-      "Works alongside the app; nothing extra to set up"
+      "Two mics catch a whisper across the room; a speaker answers out loud",
+      "Ambient LED ring: listening, working, done",
+      "Three days of battery, full charge in 30 minutes",
+      "Water-resistant, magnetic snap, privacy mode",
+      "Pairs with the Persona app; approve with a tap or your voice"
     ],
-    "how_to_get": { "label": "Join the waitlist", "url": "https://yourpersona.com/band", "note": "Placeholder link" }
+    "image": "/brand/band-knit-black.webp",
+    "gallery": [
+      "/brand/band-knit-black.webp",
+      "/brand/band-side.webp"
+    ],
+    "colors": [
+      "Carbone Black",
+      "Beige Perla",
+      "Brown Mocha",
+      "Capri Orange"
+    ],
+    "how_to_get": {
+      "label": "Pre-order Band",
+      "url": "https://yourpersona.com/band",
+      "note": "Free shipping · 30-day money-back · 1 year warranty"
+    }
   },
   "products": [
-    { "id": "app", "name": "Persona for iPhone", "body": "The full experience: calls, Messages, Gmail, reminders and everything your Persona learns about how you like things done.", "price": "Free to start", "cta": { "label": "Get on the App Store", "url": "https://apps.apple.com/" } },
-    { "id": "band", "name": "Persona Band", "body": "The screenless wristband. Press to talk, buzz when something needs you.", "price": "Pre-order, price TBA", "cta": { "label": "Join the waitlist", "url": "https://yourpersona.com/band" } },
-    { "id": "teams", "name": "Persona for teams", "body": "One Persona per person, shared inboxes and hand-offs for small teams.", "cta": { "label": "Talk to us", "url": "https://yourpersona.com/teams" } }
+    {
+      "id": "persona",
+      "name": "Persona",
+      "body": "Your personal intelligence in Messages and on a call. It learns how you like things done and only asks when it matters.",
+      "price": "Start in Messages",
+      "cta": {
+        "label": "Start in Messages",
+        "url": "https://yourpersona.com/start"
+      }
+    },
+    {
+      "id": "band",
+      "name": "Persona Band",
+      "body": "The wearable: press to talk, a ring of light to confirm, three days of battery. Four colours.",
+      "price": "Pre-order",
+      "cta": {
+        "label": "Pre-order Band",
+        "url": "https://yourpersona.com/band"
+      }
+    },
+    {
+      "id": "app",
+      "name": "Persona for iPhone",
+      "body": "The full app: calls, Messages, Gmail, reminders and everything your Persona learns about you.",
+      "price": "Free to start",
+      "cta": {
+        "label": "Get on the App Store",
+        "url": "https://apps.apple.com/"
+      }
+    }
   ],
   "experience": {
-    "title": "How the first five minutes go",
+    "title": "The full experience",
     "steps": [
-      { "title": "Text or call", "body": "Say one thing you want off your plate, or take the two-minute call." },
-      { "title": "One useful thing in the first minute", "body": "A plan, a draft or three emails triaged before any setup talk." },
-      { "title": "Connect Gmail only when it helps", "body": "Read-only, one tap, and only because it gets that first task done." },
-      { "title": "Your Persona gets a name", "body": "Pick a name; it lands in your Contacts with its own card." }
+      {
+        "title": "Text or call",
+        "body": "Tell your Persona one thing you want off your plate, or take the two-minute call."
+      },
+      {
+        "title": "One useful thing in the first minute",
+        "body": "An inbox triaged, a reply drafted, a subscription cancelled. Value first, questions later."
+      },
+      {
+        "title": "Connect Gmail when it helps",
+        "body": "Read-only, only as the way to do your task. Nothing is ever sent without your yes."
+      },
+      {
+        "title": "Your Persona gets a name",
+        "body": "Pick a name; it lands in your Contacts with its own card, and the Band hears it too."
+      }
     ]
   },
-  "footer": { "privacy": "Persona reads only what you connect, keeps drafts until you approve them, and never sends anything on its own." }
+  "footer": {
+    "privacy": "Your conversations are not a product. Not to advertisers, not to data brokers, not to anyone. Export everything in one tap, or wipe a task, a day, or all of it. Gone means gone, on our servers too."
+  }
 }

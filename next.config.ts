@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The dev badge would otherwise float inside the simulated phone and the embedded App Clip.
+  devIndicators: false,
   // Prompt and mock-inbox files are read with fs at runtime; make sure the
   // serverless bundles on Vercel carry them.
   outputFileTracingIncludes: {
