@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { messageText, type ChatMessage, type ReactionKind } from "@/lib/session/types";
 import { cn, formatClock } from "@/lib/utils";
 import { AppClipCard } from "./AppClipCard";
+import { AppClipRunner } from "./AppClipRunner";
 import { Composer, type ReplyTarget } from "./Composer";
 import { MessageActions, type AnchorRect } from "./MessageActions";
 import { MessageBubble } from "./MessageBubble";
@@ -28,6 +29,8 @@ export function IMessageThread({
   onSend,
   onReact,
   onOpenLink,
+  onOpenAppClip,
+  onCloseAppClip,
 }: {
   contactName: string;
   senderInContacts: boolean;
@@ -36,12 +39,16 @@ export function IMessageThread({
   onSend: (text: string, replyToId?: string) => void;
   onReact: (messageId: string, kind: ReactionKind) => void;
   onOpenLink: (messageId: string, url: string) => void;
+  /** The user tapped Open on an App Clip card: the clip now runs inside the phone. */
+  onOpenAppClip?: (messageId: string, url: string) => void;
+  onCloseAppClip?: (messageId: string, url: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [actions, setActions] = useState<{ id: string; rect: AnchorRect; screenHeight: number } | null>(null);
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [appClipFor, setAppClipFor] = useState<string | null>(null);
+  const [runnerFor, setRunnerFor] = useState<string | null>(null);
 
   const x = useMotionValue(0);
   const timeOpacity = useTransform(x, [-REVEAL_PX, -REVEAL_PX / 3, 0], [1, 0.2, 0]);
@@ -56,6 +63,9 @@ export function IMessageThread({
   const lastOutgoing = [...messages].reverse().find((m) => m.role === "user");
   const activeMessage = actions ? byId.get(actions.id) : undefined;
   const appClipMessage = appClipFor ? byId.get(appClipFor) : undefined;
+  const appClipLink = appClipMessage?.content?.kind === "link" && appClipMessage.content.link.appClip ? appClipMessage.content.link : undefined;
+  const runnerMessage = runnerFor ? byId.get(runnerFor) : undefined;
+  const runnerLink = runnerMessage?.content?.kind === "link" && runnerMessage.content.link.appClip ? runnerMessage.content.link : undefined;
 
   const openActions = useCallback((id: string, el: HTMLElement) => {
     const root = rootRef.current;
@@ -173,14 +183,29 @@ export function IMessageThread({
       </AnimatePresence>
 
       <AnimatePresence>
-        {appClipMessage && appClipMessage.content.kind === "link" && appClipMessage.content.link.appClip && (
+        {appClipMessage && appClipLink && (
           <AppClipCard
             key={appClipMessage.id}
-            link={appClipMessage.content.link}
+            link={appClipLink}
             onClose={() => setAppClipFor(null)}
             onOpen={() => {
-              openLink(appClipMessage.id);
+              // Open = launch the App Clip inside the phone, not the web page
               setAppClipFor(null);
+              setRunnerFor(appClipMessage.id);
+              onOpenAppClip?.(appClipMessage.id, appClipLink.url);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {runnerMessage && runnerLink && (
+          <AppClipRunner
+            key={`runner-${runnerMessage.id}`}
+            link={runnerLink}
+            onClose={() => {
+              setRunnerFor(null);
+              onCloseAppClip?.(runnerMessage.id, runnerLink.url);
             }}
           />
         )}

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # browser walkthrough output
 /e2e-out/
+
+# Claude Code worktrees
+.claude/worktrees/

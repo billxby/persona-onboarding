@@ -33,6 +33,7 @@ export const TOOL_NAMES = [
   "graduate",
   "switch_channel",
   "end_call",
+  "send_app_clip",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export const isToolName = (n: string): n is ToolName => (TOOL_NAMES as readonly string[]).includes(n);
@@ -45,6 +46,9 @@ export interface ToolDef {
 }
 
 const BOTH: ServerChannel[] = ["text", "call"];
+
+/** send_app_clip(reason): one short phrase on why now (logged, not shown). */
+export const sendAppClipInput = z.object({ reason: z.string().min(1).max(200).describe("why you are sending the tour now, one short phrase") });
 const RESULT = "Returns ok plus state and next_best_ask; read them before your next sentence.";
 
 export const TOOL_DEFS: Record<ToolName, ToolDef> = {
@@ -107,6 +111,11 @@ export const TOOL_DEFS: Record<ToolName, ToolDef> = {
     description: `Hang up the call cleanly. Always say your one-line wrap-up and what happens in the chat FIRST, then call this. Never say goodbye without calling it.`,
     input: endCallInput,
     channels: ["call"],
+  },
+  send_app_clip: {
+    description: `Send the "Meet your Persona" App Clip card: a tour of what Persona can do, the wristband and other products, and how to get them. Use when the user asks what you can do or about products/pricing/the wristband, or once after graduation as an optional tour. Never send it twice. ${RESULT}`,
+    input: sendAppClipInput,
+    channels: BOTH,
   },
 };
 

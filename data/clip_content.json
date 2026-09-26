@@ -1,0 +1,44 @@
+{
+  "_note": "Draft copy for the App Clip, the /clip page and the bot. Edit freely.",
+  "version": "2026-09-26.1",
+  "hero": {
+    "title": "Meet your Persona",
+    "subtitle": "An assistant that earns its keep in the first minute: it does one real thing for you, then keeps going.",
+    "cta": { "label": "Start in Messages", "url": "https://yourpersona.com/start" }
+  },
+  "features": [
+    { "id": "triage", "icon": "mail", "title": "Inbox triage", "body": "Read-only look at what actually needs you: who's waiting on a reply, what's a bill, what can wait." },
+    { "id": "drafts", "icon": "pen", "title": "Drafts you approve", "body": "It writes the reply in your voice and shows it to you. Nothing is ever sent without your yes." },
+    { "id": "cancel", "icon": "scissors", "title": "Cancel subscriptions", "body": "Finds the renewal email, the cancellation terms and the deadline, then drafts the note." },
+    { "id": "book", "icon": "calendar", "title": "Book appointments", "body": "Dentist, mechanic, haircut: it finds the confirmation emails and lines up the next step." },
+    { "id": "call", "icon": "phone", "title": "A real phone call", "body": "Two minutes on the phone gets everything set up. Hang up any time; it picks up in the chat." },
+    { "id": "private", "icon": "shield", "title": "Read-only and private", "body": "Gmail access is read-only, you can disconnect in one tap, and it never asks for more than the task needs." }
+  ],
+  "wristband": {
+    "name": "Persona Band",
+    "tagline": "Talk to your Persona with a press.",
+    "body": "A screenless wristband for the moments your phone is in your pocket. Press to talk, feel a buzz when a reply or a reminder lands. No display, no notifications to manage, a battery that lasts about a week.",
+    "bullets": [
+      "Press and hold to talk; let go to send",
+      "A short buzz when your Persona replies or a reminder is due",
+      "About a week between charges",
+      "Works alongside the app; nothing extra to set up"
+    ],
+    "how_to_get": { "label": "Join the waitlist", "url": "https://yourpersona.com/band", "note": "Placeholder link" }
+  },
+  "products": [
+    { "id": "app", "name": "Persona for iPhone", "body": "The full experience: calls, Messages, Gmail, reminders and everything your Persona learns about how you like things done.", "price": "Free to start", "cta": { "label": "Get on the App Store", "url": "https://apps.apple.com/" } },
+    { "id": "band", "name": "Persona Band", "body": "The screenless wristband. Press to talk, buzz when something needs you.", "price": "Pre-order, price TBA", "cta": { "label": "Join the waitlist", "url": "https://yourpersona.com/band" } },
+    { "id": "teams", "name": "Persona for teams", "body": "One Persona per person, shared inboxes and hand-offs for small teams.", "cta": { "label": "Talk to us", "url": "https://yourpersona.com/teams" } }
+  ],
+  "experience": {
+    "title": "How the first five minutes go",
+    "steps": [
+      { "title": "Text or call", "body": "Say one thing you want off your plate, or take the two-minute call." },
+      { "title": "One useful thing in the first minute", "body": "A plan, a draft or three emails triaged before any setup talk." },
+      { "title": "Connect Gmail only when it helps", "body": "Read-only, one tap, and only because it gets that first task done." },
+      { "title": "Your Persona gets a name", "body": "Pick a name; it lands in your Contacts with its own card." }
+    ]
+  },
+  "footer": { "privacy": "Persona reads only what you connect, keeps drafts until you approve them, and never sends anything on its own." }
+}

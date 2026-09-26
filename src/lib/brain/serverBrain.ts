@@ -368,7 +368,20 @@ export class ServerBrain implements OnboardingBrain {
       }, GMAIL_TIMEOUT_MS);
       return;
     }
+    if (u && u.origin === window.location.origin && u.pathname === "/clip") {
+      // Sender not in Contacts (or the card degraded): the App Clip URL is a normal web page.
+      this.postClientEvent("app_clip_fallback_web", { messageId, url: u.toString() });
+      window.open(u.toString(), "_blank", "noopener");
+      return;
+    }
     window.open(url, "_blank", "noopener");
+  }
+
+  /** Client-side UI events the server should know about (App Clip card, runner, CTAs). */
+  postClientEvent(type: string, payload: Record<string, unknown> = {}): void {
+    const st = session.get();
+    st.logEvent(`ui.${type}`, payload);
+    void postJson("/api/events", { session_id: st.sessionId, type, payload }).catch(() => undefined);
   }
 
   async onUserReaction(messageId: string, kind: ReactionKind, added: boolean): Promise<void> {

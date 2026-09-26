@@ -26,4 +26,6 @@ export interface OnboardingBrain {
   notifyGmail?(status: "connected" | "declined", email?: string): void;
   /** Pull the latest server state now (after an out-of-band change such as a chip edit). */
   refresh?(): Promise<void>;
+  /** Record a client-side UI event on the server (App Clip opened/closed/CTA…). Fire and forget. */
+  postClientEvent?(type: string, payload?: Record<string, unknown>): void;
 }

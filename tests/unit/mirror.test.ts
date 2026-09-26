@@ -22,6 +22,34 @@ describe("rowToMessage", () => {
     expect(m?.ts).toBe(Date.parse("2026-09-26T04:00:00.000Z"));
   });
 
+  it("link card with app_clip → link with appClip metadata and image", () => {
+    const m = rowToMessage(
+      base({
+        kind: "link_card",
+        content: "http://localhost:3000/clip?sid=s",
+        payload: {
+          url: "http://localhost:3000/clip?sid=s",
+          domain: "localhost:3000",
+          title: "Meet your Persona",
+          description: "What it does, the wristband, the products.",
+          image_url: "http://localhost:3000/clip/og.svg",
+          app_clip: { app_name: "Persona", title: "Meet your Persona", subtitle: "Features · wristband · products", verb: "Open" },
+        },
+      }),
+    );
+    expect(m?.content.kind).toBe("link");
+    if (m?.content.kind !== "link") throw new Error("expected link");
+    expect(m.content.link.appClip).toEqual({ appName: "Persona", title: "Meet your Persona", subtitle: "Features · wristband · products", verb: "Open" });
+    expect(m.content.link.imageUrl).toBe("http://localhost:3000/clip/og.svg");
+    expect(m.content.link.domain).toBe("localhost:3000");
+  });
+
+  it("link card without app_clip has no appClip", () => {
+    const m = rowToMessage(base({ kind: "link_card", content: "http://x/connect", payload: { url: "http://x/connect", title: "Connect" } }));
+    if (m?.content.kind !== "link") throw new Error("expected link");
+    expect(m.content.link.appClip).toBeUndefined();
+  });
+
   it("uses the client id when present", () => {
     const row = base({ role: "user", client_id: "abc-123", content: "hi" });
     expect(messageIdForRow(row)).toBe("abc-123");

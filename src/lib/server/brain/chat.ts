@@ -74,6 +74,8 @@ function triggerHint(trigger: ChatTrigger, reason: string | undefined, session: 
       return "The user came back after a while. Greet by name if known, recall the need in a few words, and offer to pick up where you left off. One question max.";
     case "silence_end":
       return "The call ended because the user went silent. One short line: no pressure, you're here in text, plus one easy next step. Never offer a call again unless asked.";
+    case "clip_demo":
+      return "Demo from the App Clip: the user has no name yet and this is a one-turn preview. Do the task on the demo inbox NOW (recent_emails / search_gmail / draft_reply), no questions about their name or Gmail, no card sending. End with one short line inviting them to continue in Messages.";
     default:
       return null;
   }

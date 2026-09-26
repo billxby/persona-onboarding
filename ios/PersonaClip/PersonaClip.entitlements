@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required for every App Clip: the parent app it belongs to. PLACEHOLDER: replace com.persona.app with the parent bundle id. -->
+	<key>com.apple.developer.parent-application-identifiers</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.persona.app</string>
+	</array>
+	<!-- The domain whose /.well-known/apple-app-site-association lists this clip. PLACEHOLDER: replace yourpersona.com. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>appclips:yourpersona.com</string>
+	</array>
+</dict>
+</plist>

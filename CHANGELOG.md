@@ -204,3 +204,41 @@ New files:
 | Env | `.env.example` (committed template); `.env.local` gained `ANTHROPIC_WORKSPACE_ID` and `TEXT_PROVIDER` (temporarily `openai` for testing, restored to `anthropic`). |
 
 Outside the repo: the Supabase project received the migration and a public `voicemail` storage bucket; test sessions from the walkthroughs and simulator runs remain in the tables.
+
+## 10. App Clip "Meet your Persona" (second commit, 2026-09-26)
+
+Requested after the backend landed: an App Clip card in the thread that opens a scrollable tour (features, the
+wristband, products, how to get them, the full experience). DESIGN.md §19 has the feasibility findings and the plan;
+`docs/research/app-clip-feasibility.md` the sourced brief.
+
+Finding that changed the shape: Apple's HIG rejects App Clips that exist "to advertise services or products",
+guideline 2.5.16(a) bans advertising in clips and 4.2 rejects marketing-only apps, while Apple endorses demo clips.
+The clip was therefore reframed as "Try your Persona": a live demo turn on the demo inbox first, the tour second.
+Other verified corrections folded into DESIGN §19: 100 MB limit for iOS 17+ digital invocations, an Apple Developer
+Program membership is needed even to run a clip on your own device, clip data is deleted after 10 days.
+
+Built:
+
+- Live demo: `POST /api/clip/demo { task }` → throwaway session with the demo inbox connected → one real text turn
+  through the same brain and tools → bubbles; rate-limited per IP and per origin session; "Try your Persona" section
+  with task chips and a free-text field on `/clip` (and in the native scaffold); `app_clip_demo` events.
+
+- `data/clip_content.json` + `src/lib/shared/clip.ts` (zod schema, card constants, `clipUrl`) + `GET /api/clip/content`.
+- Tool `send_app_clip(reason)` (both channels, once per session) inserting a `link_card` with `payload.app_clip`;
+  one policy line in each mode prompt (budget still under 1,500 tokens). Verified live on Claude: "what can you
+  actually do? and what is this wristband thing" → card + three examples + "tap it whenever" + back to the name.
+- `/clip?sid=` page (invocation URL and web fallback, Smart App Banner meta, OG image `public/clip/og.png` rendered
+  from `og.svg`), `?embed=1` for the in-phone runner.
+- Simulator: `AppClipRunner` (launch splash, "Persona · App Clip" bar, iframe of the clip), wired from the existing
+  App Clip bubble and system card; Contacts-off degrades to a plain link that opens a tab; stage menu entry.
+- `POST /api/events` for the five `app_clip_*` client events; AASA at `/.well-known/apple-app-site-association` via
+  `src/app/api/aasa/route.ts` + a rewrite (a dot-folder route broke Next's type generation).
+- `ios/PersonaClip/` SwiftUI scaffold + `ios/README.md`; `swiftc -typecheck` passes against the iOS 26.4 SDK.
+- Env (optional): `APPLE_TEAM_ID`, `APP_CLIP_BUNDLE_ID`, `APP_STORE_ID`.
+
+Verified: typecheck, lint, 105 unit tests, production build (21 routes), `scripts/e2e-app-clip.mjs` 13/13 checks
+(bubble → card → splash → runner with hero, wristband CTA stays inside the clip, six feature tiles, close, Contacts-off
+plain preview, fallback page with the banner meta).
+
+Not built, by design: publishing. The real Messages card needs an Apple team, a parent app, App Store review, and the
+sender in the recipient's Contacts. Product copy in the JSON is a draft.

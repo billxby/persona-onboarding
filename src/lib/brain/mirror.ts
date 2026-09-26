@@ -21,6 +21,20 @@ function domainOf(url: string | undefined, fallback?: string): string {
   }
 }
 
+/** `payload.app_clip` on a link card → the App Clip metadata the thread gates on Contacts. */
+function appClipFromPayload(p: MessageRow["payload"]): LinkPreview["appClip"] | undefined {
+  const raw = p.app_clip;
+  if (!raw || typeof raw !== "object") return undefined;
+  const c = raw as { app_name?: unknown; title?: unknown; subtitle?: unknown; verb?: unknown };
+  const verb = c.verb === "Open" || c.verb === "View" || c.verb === "Play" ? c.verb : undefined;
+  return {
+    appName: typeof c.app_name === "string" && c.app_name ? c.app_name : "Persona",
+    title: typeof c.title === "string" ? c.title : "Meet your Persona",
+    subtitle: typeof c.subtitle === "string" ? c.subtitle : "",
+    verb,
+  };
+}
+
 function linkFromPayload(p: MessageRow["payload"], content: string | null): LinkPreview {
   const url = p.url ?? content ?? "";
   return {
@@ -29,6 +43,7 @@ function linkFromPayload(p: MessageRow["payload"], content: string | null): Link
     title: p.title,
     description: p.description ?? (p.lines ? p.lines.join(" · ") : undefined),
     imageUrl: typeof p.image_url === "string" ? p.image_url : undefined,
+    appClip: appClipFromPayload(p),
   };
 }
 

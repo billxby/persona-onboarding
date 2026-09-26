@@ -1,0 +1,18 @@
+<!--
+  Keys to add to the App Clip target's Info.plist (Xcode generates the rest when you add an App Clip target).
+  NSAppClipRequestEphemeralUserNotification: lets the clip ask for notifications for up to 8 hours after launch
+  (the "Remind me" button in NotificationPrompt.swift). NSAppClipRequestLocationConfirmation stays false: this
+  clip never needs to confirm the user's location.
+-->
+<key>NSAppClip</key>
+<dict>
+	<key>NSAppClipRequestEphemeralUserNotification</key>
+	<true/>
+	<key>NSAppClipRequestLocationConfirmation</key>
+	<false/>
+</dict>
+<!-- Optional: what Settings shows for the clip's data. -->
+<key>NSUserActivityTypes</key>
+<array>
+	<string>NSUserActivityTypeBrowsingWeb</string>
+</array>

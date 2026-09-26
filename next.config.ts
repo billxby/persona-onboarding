@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
     "/api/**": ["./prompts/**", "./data/**"],
     "/summary/**": ["./prompts/**"],
   },
+  // Apple fetches the App Clip association file at this exact path; a dot-folder route
+  // breaks Next's type generation, so it lives at /api/aasa and is rewritten here.
+  async rewrites() {
+    return [{ source: "/.well-known/apple-app-site-association", destination: "/api/aasa" }];
+  },
 };
 
 export default nextConfig;

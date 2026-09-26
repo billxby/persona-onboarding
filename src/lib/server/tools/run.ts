@@ -10,6 +10,7 @@ import { asks, nextBestAsk } from "@/lib/server/state";
 import { contentTokens, isMoodInference, validateName, validateNeed } from "@/lib/server/validators";
 import type { MemorySource, MessageRow, ServerChannel, SessionRow, SlotName, StateSummary, ToolResult } from "@/lib/shared/types";
 import { stateSummary } from "@/lib/shared/types";
+import { APP_CLIP_CARD, clipUrl } from "@/lib/shared/clip";
 import { isToolName, TOOL_DEFS, type ToolName } from "./definitions";
 
 /**
@@ -420,6 +421,32 @@ const endCall: Handler = async (ctx, input, effects) => {
   return { session, ok: true, note: "call is ending; the chat continues" };
 };
 
+/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session, both channels. */
+const sendAppClip: Handler = async (ctx, input, effects) => {
+  const session = ctx.session;
+  const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
+  if (already) return { session, ok: false, error: "already sent; the card is in the chat, point them to it" };
+  const url = clipUrl(env.APP_URL, session.id);
+  const card = await insertMessage({
+    session_id: session.id,
+    role: "assistant",
+    kind: "link_card",
+    channel: "text",
+    content: url,
+    payload: {
+      url,
+      domain: new URL(env.APP_URL).host,
+      title: APP_CLIP_CARD.title,
+      description: APP_CLIP_CARD.subtitle,
+      image_url: `${env.APP_URL}/clip/og.png`,
+      app_clip: { ...APP_CLIP_CARD },
+    },
+  });
+  effects.messages.push(card);
+  await insertEvent(session.id, "app_clip_card_shown", { via: "tool", channel: ctx.channel, reason: short(String(input.reason ?? ""), 120) });
+  return { session, ok: true, data: { sent: true }, note: "card is in the chat; tell them to tap it" };
+};
+
 const HANDLERS: Record<ToolName, Handler> = {
   set_slot: setSlot,
   confirm_slot: confirmSlot,
@@ -433,6 +460,7 @@ const HANDLERS: Record<ToolName, Handler> = {
   graduate,
   switch_channel: switchChannel,
   end_call: endCall,
+  send_app_clip: sendAppClip,
 };
 
 // ---------------------------------------------------------------------------

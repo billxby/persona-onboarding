@@ -32,6 +32,10 @@ export const env = {
   get REALTIME_MODEL() { return opt("REALTIME_MODEL") ?? "gpt-realtime-2.1"; },
   get REALTIME_VOICE() { return opt("REALTIME_VOICE") ?? "marin"; },
   get TRANSCRIBE_MODEL() { return opt("TRANSCRIBE_MODEL") ?? "gpt-4o-mini-transcribe"; },
+  // App Clip (optional until there is a real iOS app): AASA entry + Smart App Banner
+  get APPLE_TEAM_ID() { return opt("APPLE_TEAM_ID"); },
+  get APP_CLIP_BUNDLE_ID() { return opt("APP_CLIP_BUNDLE_ID"); },
+  get APP_STORE_ID() { return opt("APP_STORE_ID"); },
 };
 
 export const googleConfigured = () => !!(opt("GOOGLE_CLIENT_ID") && opt("GOOGLE_CLIENT_SECRET"));

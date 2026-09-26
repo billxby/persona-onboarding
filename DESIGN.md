@@ -29,8 +29,9 @@ In:
 5. Main mode after graduation: same thread, Gmail Q&A (`search_gmail`), drafts (`draft_reply`, text only, never sends).
 6. Memory ledger with provenance, quarantine, and explain.
 7. Graduation end state: summary card, thread header renamed to the agent, contact-card bubble, hint line "Try: anything from my landlord?".
+8. App Clip "Meet your Persona": a card in the thread that opens a scrollable tour of what Persona can do, the wristband, the products, how to get them, and the full experience. Simulated in the phone, real web fallback, native scaffold; details in section 19.
 
-Out: real iMessage, SMS, telephony, App Clips, calendar, sending email, reminders, outbound calls on the user's behalf, proactive messages after graduation, Inngest, Langfuse, LiveKit, Pipecat.
+Out: real iMessage, SMS, telephony, calendar, sending email, reminders, outbound calls on the user's behalf, proactive messages after graduation, Inngest, Langfuse, LiveKit, Pipecat. Publishing the App Clip to the App Store is out; everything up to that point is in (section 19).
 
 ## 3. Stack
 
@@ -349,6 +350,7 @@ Citations for the README: [Zep temporal knowledge graph](https://arxiv.org/abs/2
 7. Value moment and main mode: `recent_emails`, `search_gmail`, `draft_reply`, graduation summary card, contact card, header rename, hint line.
 8. Simulator polish: incoming-call screen, ringtone, decline → voicemail, progress chips, brain view, latency logging.
 9. Evaluation: simulator suite, manual voice cases, fix every repeated question, README.
+10. App Clip (section 19): content source, `/clip` page, `send_app_clip` tool, in-phone runner, AASA route, native scaffold, events.
 
 ## 18. README must cover
 
@@ -358,3 +360,88 @@ Citations for the README: [Zep temporal knowledge graph](https://arxiv.org/abs/2
 4. Memory design paragraph with the three citations and the Cortesol line.
 5. Stress tests you invite them to run, including the poisoned email.
 6. Known limits: OAuth test users, 7-day tokens, mock inbox labeled as such.
+7. App Clip: what the simulator shows, what is real today (`/clip`, AASA, native scaffold), and the exact steps to get the card into real Messages.
+
+## 19. App Clip: "Meet your Persona"
+
+Added 2026-09-26. Intent: during onboarding the bot can drop an App Clip card into the thread. Tapping it opens a
+scrollable, usable native experience, right from the message you are looking at, that shows which Persona features
+could help you, the wristband, the other products, how to get them, and a preview of the full experience.
+
+Decision (fixed after the feasibility pass): the clip is a **demo, not a brochure**. Apple's HIG rejects App Clips
+used "to advertise services or products", guideline 2.5.16(a) says clips cannot contain advertising, and 4.2 rejects
+marketing-only apps; Apple explicitly endorses demo clips where the user tries the product. So the first thing in
+the clip is "Try your Persona": pick a task (or type one) and watch Persona do it on the demo inbox in a real model
+turn. The features, the wristband, the products and how to get them follow as "what's next". Every fact below is
+sourced in `docs/research/app-clip-feasibility.md` (verified against Apple's pages) and the earlier
+`docs/research/app-clips-in-messages.md`.
+
+### 19.1 Feasibility (verified; sources in `docs/research/app-clips-in-messages.md` and `docs/research/app-clip-feasibility.md`)
+
+1. An App Clip is a native SwiftUI/UIKit target inside a full iOS app's bundle. It cannot ship on its own: the parent
+   app is submitted with it, and the Messages card only appears for links once a version containing the clip is
+   published. Until then a clip can be launched on a test device through Settings → Developer → Local Experiences
+   (QR, NFC, Safari), not from a Messages bubble.
+2. In a 1:1 iMessage thread the App Clip bubble renders only when the sender is in the recipient's Contacts and the
+   link is sent over iMessage as its own message. Otherwise the same URL degrades to a plain rich link (or is not
+   tappable for unknown senders). The simulator already models this with `senderInContacts`.
+3. The system card is static per App Store Connect experience: header image 1800×1200, title ≤ 30 characters,
+   subtitle ≤ 56, verb Open / View / Play. No per-user text on the card; personalisation happens inside the clip.
+4. The clip should be native, not a web view (HIG: "Avoid using web views in your App Clip"; 4.2.2 rejects
+   repackaged websites). It may fetch content and run demo turns through our API. Size limits: 10 MB uncompressed
+   (iOS 15), 15 MB (iOS 16), 100 MB on iOS 17+ for digital invocations.
+5. Inside a clip: no background execution, notifications for up to 8 hours after launch (opt-in), no In-App Purchase
+   (Apple Pay is allowed), no Contacts / Calendar / Health access. Clips are removed after 30 days of disuse and their
+   data after 10 days (30 with Sign in with Apple). Therefore "how to get them" is a waitlist link and an App Store
+   link (SKOverlay after the demo), never a purchase inside the clip, and nothing in the clip is worth persisting.
+6. Every invocation URL must also work as a normal website: the same page serves as the fallback for Android, macOS,
+   unknown senders, and reviewers. The domain must serve `/.well-known/apple-app-site-association` with an
+   `appclips` entry and the `apple-itunes-app` Smart App Banner meta tag.
+7. Requirements we do not have yet: an Apple Developer Program membership (needed even to run a clip on your own
+   device: the On Demand Install Capable entitlement is Program-only), a parent iOS app in App Store Connect, App
+   Store review. Apple's default link `appclip.apple.com/id?p=<clip bundle id>` (iOS 16.4+) avoids the AASA setup but
+   also only works after approval. Everything else can be built and tested now, including type-checking the native
+   target on this machine (Xcode 26).
+
+### 19.2 What is built
+
+1. Demo: `POST /api/clip/demo { task }` creates a throwaway session with the demo inbox connected and runs one real
+   text turn through the same brain and tools (`search_gmail`, `draft_reply`), returning the bubbles; rate-limited.
+   The clip shows three task chips and a free-text field, then the reply as iMessage bubbles, then "Continue in
+   Messages". Nothing is stored beyond the throwaway session; no name, need or Gmail is collected in the clip.
+2. Content source: `data/clip_content.json` (draft copy, edit freely) validated by `src/lib/shared/clip.ts`; served at
+   `GET /api/clip/content`. The web page, the simulated clip and the native clip all read the same file.
+3. `/clip?sid=` page: the App Clip invocation URL and its web fallback. Mobile-first, scrollable: hero, six features,
+   the wristband with a waitlist link, products with links, the four-step "full experience", privacy line. Carries the
+   Smart App Banner meta tag and an Open Graph image. `?embed=1` strips the site chrome for the in-phone runner.
+4. Tool `send_app_clip(reason)`, both channels, once per session: inserts a `link_card` with `payload.app_clip`
+   (app name, title, subtitle, verb). Policy: when the user asks what Persona can do or about products, the wristband
+   or pricing, answer with three concrete examples in words and send the card once; after graduation the tour may be
+   offered once. Never before the first useful thing unless asked. The clip never collects a name, a need or Gmail;
+   data collection stays in the thread and on the call.
+5. Simulator: with the sender in Contacts the card renders as the App Clip bubble; tapping it shows the iOS system
+   card (header, title, subtitle, Open, App Store line, 8-hour notifications note); Open plays the App Clip launch
+   splash and runs the clip full-frame inside the phone (an iframe of `/clip?embed=1`) under the "Persona · App Clip"
+   bar with a close control. Out of Contacts the same message is a plain link preview that opens `/clip` in a tab.
+6. AASA: `GET /.well-known/apple-app-site-association` → `{"appclips":{"apps":["<APPLE_TEAM_ID>.<APP_CLIP_BUNDLE_ID>"]}}`
+   from env (`APPLE_TEAM_ID`, `APP_CLIP_BUNDLE_ID`, `APP_STORE_ID`; empty until the Apple side exists).
+7. Native scaffold `ios/PersonaClip/`: SwiftUI App Clip sources that decode the same content JSON, the entitlements
+   (parent application identifier, `appclips:` associated domain), the Info.plist keys, and a README with the Xcode
+   steps. Type-checked with the installed Xcode; not yet run on a device.
+8. Events: `app_clip_card_shown`, `app_clip_opened`, `app_clip_closed`, `app_clip_cta`, `app_clip_fallback_web` in
+   `events`, via `POST /api/events`, so the tour shows up in metrics.
+
+### 19.3 Steps to the real card in Messages (owner: Persona)
+
+1. Apple Developer Program team; parent app record in App Store Connect; bundle ids `com.persona.app` and
+   `com.persona.app.Clip` (fixed after first upload).
+2. Xcode: add the App Clip target, drop in `ios/PersonaClip/`, set the associated domain, build to a device.
+3. Deploy the Next app on the production domain; set `APPLE_TEAM_ID`, `APP_CLIP_BUNDLE_ID`, `APP_STORE_ID`; confirm
+   the AASA URL returns JSON over HTTPS with no redirect.
+4. App Store Connect: default App Clip experience with the header image, "Meet your Persona", the subtitle, Open,
+   invocation URL `https://<domain>/clip`.
+5. Test with Local Experiences on a device, then TestFlight, then submit parent app + clip; the Messages bubble
+   works after the version is live and only for senders in the recipient's Contacts.
+6. Empirical test before relying on it: send the URL from the real sending stack to a test iPhone not in Contacts,
+   after one reply, and after adding to Contacts; record what renders.
+

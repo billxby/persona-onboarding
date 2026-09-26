@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, Ellipsis, History, Inbox, Mail, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
+import { AppWindow, Database, Ellipsis, History, Inbox, Mail, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -30,6 +30,23 @@ async function connectDemoInbox() {
     getBrain().notifyGmail?.("connected", data.email ?? "demo@persona.test");
   } catch (e) {
     session.get().logEvent("gmail.demo_failed", { error: String(e) });
+  }
+}
+
+/** "Send App Clip card": the bot drops the Meet-your-Persona App Clip link into the thread. */
+async function sendAppClipCard() {
+  const st = session.get();
+  st.logEvent("user.send_app_clip");
+  try {
+    const res = await fetch("/api/tools/send_app_clip", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: st.sessionId, input: { reason: "menu" } }),
+    });
+    if (!res.ok) session.get().logEvent("app_clip.send_failed", { status: res.status });
+    await getBrain().refresh?.();
+  } catch (e) {
+    session.get().logEvent("app_clip.send_failed", { error: String(e) });
   }
 }
 
@@ -113,9 +130,18 @@ export function StageMenu() {
                 }}
               />
               <MenuButton
+                icon={AppWindow}
+                label="Send App Clip card"
+                hint={senderInContacts ? "Meet your Persona: features, wristband, products" : "add Persona to Contacts first, or it renders as a plain link"}
+                onClick={() => {
+                  void sendAppClipCard();
+                  setOpen(false);
+                }}
+              />
+              <MenuButton
                 icon={senderInContacts ? UserRoundX : UserRoundPlus}
                 label={senderInContacts ? "Remove Persona from Contacts" : "Add Persona to Contacts"}
-                hint={senderInContacts ? "App Clip cards degrade to plain links" : "unlocks App Clip cards in the thread"}
+                hint={senderInContacts ? "App Clip cards degrade to plain links" : "App Clip cards only render for senders in Contacts"}
                 onClick={() => setSenderInContacts(!senderInContacts)}
               />
               <MenuButton

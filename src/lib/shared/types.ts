@@ -133,6 +133,12 @@ export type EventType =
   | "value_moment"
   | "resume"
   | "text_during_call"
+  | "app_clip_card_shown"
+  | "app_clip_opened"
+  | "app_clip_closed"
+  | "app_clip_cta"
+  | "app_clip_fallback_web"
+  | "app_clip_demo"
   | "error";
 
 export interface EventRow {
@@ -273,7 +279,8 @@ export type ChatTrigger =
   | "gmail_connected"
   | "gmail_declined"
   | "welcome_back"
-  | "silence_end";
+  | "silence_end"
+  | "clip_demo";
 
 export interface ChatRequest {
   session_id: string;

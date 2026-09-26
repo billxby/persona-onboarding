@@ -76,6 +76,9 @@ export function Simulator() {
   };
 
   const onOpenLink = (messageId: string, url: string) => void getBrain().onLinkOpen(messageId, url);
+  // App Clip cards run inside the phone (AppClipRunner); the brain only records the event.
+  const onOpenAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_opened", { messageId, url });
+  const onCloseAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_closed", { messageId, url });
 
   const onReact = (messageId: string, kind: ReactionKind) => {
     const added = toggleReaction(messageId, kind, "user");
@@ -104,6 +107,8 @@ export function Simulator() {
                     onSend={onSend}
                     onReact={onReact}
                     onOpenLink={onOpenLink}
+                    onOpenAppClip={onOpenAppClip}
+                    onCloseAppClip={onCloseAppClip}
                   />
                 </motion.div>
               )}
