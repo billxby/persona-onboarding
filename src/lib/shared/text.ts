@@ -188,6 +188,8 @@ export const USER_HELLO = "Hey Persona";
 /** DESIGN.md §7.1: the fixed reply to the hello, three bubbles: intro, the Meet your Persona App Clip card, the ask. */
 export const OPENER_INTRO = "Hey! I'm your new personal assistant. Tap below to see what I can do ;)";
 export const OPENER_ASK = "So, what's something you want to take off your plate this week?";
+/** After the model's first reply when the thread did not start with the hello: the card still goes out first thing. */
+export const OPENER_CARD_LINE = "Tap below to see what else I can do ;)";
 
 /** A bare greeting to Persona (the prefilled hello, possibly retyped): the server answers it with the fixed opener. */
 export function isHello(text: string): boolean {

@@ -422,7 +422,7 @@ const endCall: Handler = async (ctx, input, effects) => {
 };
 
 /** Insert the "Meet your Persona" App Clip link card into the thread and log that it was shown. */
-export async function insertAppClipCard(session_id: string, via: "tool" | "opener", extra: Record<string, unknown> = {}): Promise<MessageRow> {
+export async function insertAppClipCard(session_id: string, via: "tool" | "opener" | "first_reply", extra: Record<string, unknown> = {}): Promise<MessageRow> {
   const url = clipUrl(env.APP_URL, session_id);
   const card = await insertMessage({
     session_id,

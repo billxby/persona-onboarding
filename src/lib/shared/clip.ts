@@ -48,7 +48,7 @@ export const APP_CLIP_SUBTITLE_MAX = 56;
 export const APP_CLIP_CARD = {
   app_name: "Persona",
   title: "Meet your Persona",
-  subtitle: "What it does, the wristband, how to get it",
+  subtitle: "What it can do for you, right in Messages",
   verb: "Open" as const,
 };
 

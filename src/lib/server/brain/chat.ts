@@ -1,10 +1,10 @@
 import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
 import type { Belief, ChatEvent, ChatTrigger, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
-import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, isHello, OPENER_ASK, OPENER_INTRO } from "@/lib/shared/text";
+import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, isHello, OPENER_ASK, OPENER_CARD_LINE, OPENER_INTRO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
 import { env } from "../env";
 import { markGmail } from "../gmail/oauth";
-import { activeBeliefs, detectDrop, DROP_COPY, insertEvent, insertMessage, listMessages, recentThread } from "../messages";
+import { activeBeliefs, detectDrop, DROP_COPY, insertEvent, insertMessage, listEvents, listMessages, recentThread } from "../messages";
 import * as promptMod from "../prompt";
 import { fastModel, textModel } from "../providers";
 import { acquireReplyLock, getSession, patchSession, releaseReplyLock } from "../session";
@@ -243,6 +243,7 @@ const slotEmpty = (s: SessionRow, slot: SlotName) =>
 async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string | undefined, emit: Emit): Promise<void> {
   const session_id = session.id;
   const thread = await recentThread(session_id, { n: 14, channels: ["text", "call"] });
+  const firstReply = !thread.some((m) => m.role === "assistant");
 
   // Nothing to answer (e.g. a retried debounce after the reply already landed): stay quiet.
   if (trigger === "user") {
@@ -344,6 +345,14 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
     await sleep(typingDelayMs(b));
     const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: b, channel: "text" });
     emit({ type: "message", message: row });
+  }
+  // The App Clip card goes out in the first exchange however the thread started (DESIGN §7.1): a first
+  // text that was not the hello skips the fixed opener, so the card follows the model's first reply,
+  // unless it already went out (the model can call send_app_clip itself; a call may have sent it).
+  if (firstReply && (await listEvents(session_id, ["app_clip_card_shown"])).length === 0) {
+    await sleep(typingDelayMs(OPENER_CARD_LINE));
+    emit({ type: "message", message: await insertMessage({ session_id, role: "assistant", kind: "text", content: OPENER_CARD_LINE, channel: "text" }) });
+    emit({ type: "message", message: await insertAppClipCard(session_id, "first_reply") });
   }
   emit({ type: "typing", on: false });
 

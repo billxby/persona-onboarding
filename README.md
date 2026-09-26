@@ -51,7 +51,8 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
 1. The thread opens empty with "Hey Persona" prefilled in the compose field, unsent. Sending it gets the bot's
    fixed opener, three bubbles: "Hey! I'm your new personal assistant. Tap below to see what I can do ;)", the
    Meet your Persona App Clip card, then "So, what's something you want to take off your plate this week?"
-   Two exits: type, or ring the phone.
+   Any other first text goes to the model, and the server adds the card after its first reply. Two exits:
+   type, or ring the phone.
 2. Every user turn goes through slot extraction via tools, whatever was asked. A stated need flips
    `mode` to `main` immediately: the task starts and the missing slots become soft, once-per-session nudges.
 3. Ask order is `user_name → need → gmail`; in text, `agent_name` after the first useful result. One
