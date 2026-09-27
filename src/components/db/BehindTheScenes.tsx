@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowUpRight, Pencil, PhoneIncoming, PhoneOff, Send, Trash2, Unplug } from "lucide-react";
+import { ArrowUpRight, ChevronDown, History, Pencil, PhoneIncoming, PhoneOff, Send, Trash2, Unplug } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { callController } from "@/lib/call/controller";
-import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
+import { restartSimulation, restoreRun, useRunsStore, type RunSnapshot } from "@/lib/session/runs";
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
-import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
+import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type ChatMessage, type SessionEvent, type SlotKey, type SlotStatus } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
 import { builtinForSlot, eligibility } from "@/lib/memory/intentions";
 import type { BeliefStatus, IntentionStatus } from "@/lib/shared/types";
@@ -35,38 +35,52 @@ export function BehindTheScenes() {
   useBrainView();
   const hydrated = useHydrated();
   const s = useSessionStore();
+  const runs = useRunsStore((st) => st.runs);
+  // which run the page shows: the live session, or an archived run picked from the dropdown (read-only)
+  const [viewId, setViewId] = useState<string | null>(null);
+  const viewing = viewId ? (runs.find((r) => r.id === viewId) ?? null) : null;
 
   if (!hydrated) return <div className="p-10 text-black/40">Loading session…</div>;
 
   return (
     <main className="min-h-dvh bg-[#fafafa] text-[#111]">
-      <TopBar />
+      <TopBar runs={runs} viewId={viewing ? viewing.id : null} onView={setViewId} />
       <div className="mx-auto max-w-[1180px] px-6 pb-16">
-        <Hero />
+        {viewing ? (
+          <ArchivedRunView run={viewing} onBack={() => setViewId(null)} />
+        ) : (
+          <>
+            <Hero />
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <div className="flex flex-col gap-5 lg:col-span-2">
-            <SlotTracker />
-            <BrainCard />
-            <MindCard />
-            <Transcript />
-            <EventLog />
-          </div>
-          <div className="flex flex-col gap-5">
-            <SessionCard />
-            <CallCard />
-            <RunsCard />
-            <StorageCard />
-          </div>
-        </div>
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+              <div className="flex flex-col gap-5 lg:col-span-2">
+                <SlotTracker />
+                <BrainCard />
+                <MindCard />
+                <Transcript />
+                <EventLog />
+              </div>
+              <div className="flex flex-col gap-5">
+                <SessionCard />
+                <CallCard />
+                <RunsCard onView={setViewId} />
+                <StorageCard />
+              </div>
+            </div>
+          </>
+        )}
       </div>
       <span hidden>{s.sessionId}</span>
     </main>
   );
 }
 
-function TopBar() {
+const runLabel = (r: RunSnapshot) => `${r.slots.user_name.value ?? "Anonymous"} · ${r.messages.length} msgs · ${fmtDateTime(r.createdAt)}`;
+
+function TopBar({ runs, viewId, onView }: { runs: RunSnapshot[]; viewId: string | null; onView: (id: string | null) => void }) {
   const connection = useSessionStore((st) => st.connection);
+  const liveName = useSessionStore((st) => st.slots.user_name.value);
+  const liveCount = useSessionStore((st) => st.messages.length);
   return (
     <div className="sticky top-0 z-20 border-b border-black/[0.06] bg-[#fafafa]/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6">
@@ -74,6 +88,27 @@ function TopBar() {
           <span className="text-[15px] font-semibold tracking-tight">Persona</span>
           <span className="text-black/25">/</span>
           <span className="text-[14px] text-black/70">Behind the scenes</span>
+          <span className="text-black/25">/</span>
+          {/* live session or any archived run, read-only */}
+          <label className="relative flex items-center">
+            <History className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-black/45" />
+            <select
+              value={viewId ?? "live"}
+              onChange={(e) => onView(e.target.value === "live" ? null : e.target.value)}
+              aria-label="Which run to show"
+              data-db-run-select
+              className="h-8 appearance-none rounded-lg border border-black/10 bg-white pl-8 pr-7 text-[13px] text-black/80 outline-none hover:border-black/20 focus:border-black/40"
+            >
+              <option value="live">Live · {liveName ?? "Anonymous"} · {liveCount} msgs</option>
+              {runs.length > 0 && <option disabled>── previous runs ──</option>}
+              {runs.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {runLabel(r)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-black/45" />
+          </label>
         </div>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5 text-[12px] text-black/55">
@@ -446,8 +481,9 @@ function CallCard() {
   );
 }
 
-function Transcript() {
-  const messages = useSessionStore((st) => st.messages);
+function Transcript({ messages: given }: { messages?: ChatMessage[] } = {}) {
+  const live = useSessionStore((st) => st.messages);
+  const messages = given ?? live;
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   return (
     <Card title="Transcript" subtitle={`${messages.length} messages. Content is limited to what a real iMessage sender can put in a thread: text, links, images, contacts, audio, call rows.`}>
@@ -504,8 +540,9 @@ function Transcript() {
 
 const FILTERS = ["all", "call.", "user.", "brain.", "server.", "gmail.", "slot.", "reaction.", "channel.", "phase.", "voice.", "mock."] as const;
 
-function EventLog() {
-  const events = useSessionStore((st) => st.events);
+function EventLog({ events: given }: { events?: SessionEvent[] } = {}) {
+  const live = useSessionStore((st) => st.events);
+  const events = given ?? live;
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const shown = useMemo(() => [...events].reverse().filter((e) => filter === "all" || e.type.startsWith(filter)), [events, filter]);
   return (
@@ -513,9 +550,11 @@ function EventLog() {
       title="Event log"
       subtitle="Append-only. Newest first."
       right={
-        <button onClick={() => useSessionStore.setState({ events: [] })} className="text-[12px] text-black/45 hover:text-black">
-          clear
-        </button>
+        given ? null : (
+          <button onClick={() => useSessionStore.setState({ events: [] })} className="text-[12px] text-black/45 hover:text-black">
+            clear
+          </button>
+        )
       }
     >
       <div className="mb-3 flex flex-wrap gap-1.5">
@@ -566,7 +605,44 @@ function EventLog() {
   );
 }
 
-function RunsCard() {
+/** A previous run, read-only: what it collected, the thread, the client events. Restore puts it back in the phone. */
+function ArchivedRunView({ run, onBack }: { run: RunSnapshot; onBack: () => void }) {
+  const name = run.slots.user_name.value;
+  return (
+    <div data-db-archived-run>
+      <div className="py-10">
+        <p className="font-mono text-[12px] text-black/45">
+          archived run {run.id} · <button onClick={onBack} className="underline hover:text-black">back to live</button>
+        </p>
+        <h1 className="mt-2 text-[34px] font-semibold leading-[1.1] tracking-tight">
+          {name ? `${name}'s onboarding` : "An onboarding"}
+          <span className="text-black/35"> · {run.phase}</span>
+        </h1>
+        <p className="mt-2 text-[15px] text-black/55">
+          Started {fmtDateTime(run.createdAt)} · archived {fmtDateTime(run.archivedAt)} · {run.messages.length} messages, {run.events.length} client events. Read-only; the server-side brain view belongs to the live session.
+        </p>
+        <div className="mt-5 flex items-center gap-4">
+          <SlotChips slots={run.slots} />
+          <Button
+            tone="primary"
+            onClick={() => {
+              restoreRun(run.id);
+              onBack();
+            }}
+          >
+            Restore into the simulator
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-5">
+        <Transcript messages={run.messages} />
+        <EventLog events={run.events} />
+      </div>
+    </div>
+  );
+}
+
+function RunsCard({ onView }: { onView: (id: string) => void }) {
   const runs = useRunsStore((st) => st.runs);
   const remove = useRunsStore((st) => st.remove);
   return (
@@ -600,6 +676,7 @@ function RunsCard() {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <Button onClick={() => onView(r.id)}>View</Button>
                 <Button onClick={() => restoreRun(r.id)}>Restore</Button>
                 <button onClick={() => remove(r.id)} className="rounded-lg p-1.5 text-black/40 hover:bg-rose-50 hover:text-rose-600" aria-label="Delete run">
                   <Trash2 className="h-3.5 w-3.5" />

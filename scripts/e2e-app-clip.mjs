@@ -49,6 +49,8 @@ try {
   log("session", sid);
   const openerCount = (await inTexts()).length;
 
+  // before the agent is named the header is an unknown sender: a number, not "Persona"
+  check((await page.locator("text=+1 (415) 555").count()) > 0, "thread header shows an unknown number before naming");
   // Persona is in Contacts by default → the opener's card is the App Clip bubble (no toggling needed)
   check(await page.evaluate(() => window.__persona.session.getState().senderInContacts) === true, "Persona is in Contacts by default");
   const openBtn = page.locator("[data-bubble] button", { hasText: /^Open$/ }).first();
@@ -184,6 +186,7 @@ try {
   check(!relay.some((b) => GMAIL_ASKS.some((re) => re.test(b))), "relay does not re-ask Gmail");
   check(!relay.some((b) => /want me to call you|quick call/i.test(b)), "relay does not offer a call again");
   check((await page.locator("text=Jarvis").count()) > 0, "thread shows the new name (header / contact card)");
+  check((await page.locator("text=+1 (415) 555").count()) === 0, "the unknown-sender number is gone once the agent is named");
   await shot(page, "relay");
   v = await view(sid);
   const done = ["get_name", "name_agent", "connect_gmail", "offer_call"].map((k) => [k, (v.intentions ?? []).find((i) => i.key === k)?.status]);
@@ -219,26 +222,28 @@ try {
   const web = await ctx.newPage();
   await web.setViewportSize({ width: 430, height: 900 });
   await web.goto(BASE + `/clip?sid=${sid}`, { waitUntil: "domcontentloaded" });
-  await web.waitForSelector("[data-clip-onboarding][data-clip-screen='welcome']", { timeout: 20_000 });
-  await web.waitForLoadState("networkidle"); // hydrated, and the resume state (GET /api/clip/state) is in
+  // a finished onboarding reopens straight on "You're set" (the resume state decides the first screen)
+  await web.waitForSelector("[data-clip-onboarding][data-clip-screen='done']", { timeout: 20_000 });
+  await web.waitForLoadState("networkidle");
+  check(true, "reopened clip opens on the done screen, not the welcome");
   const banner = await web.locator('meta[name="apple-itunes-app"]').getAttribute("content");
   check(!!banner && banner.includes("app-clip-bundle-id="), `Smart App Banner meta present: ${banner}`);
   check((await web.locator("text=Open in Messages").count()) === 0 && (await web.locator("nav").count()) === 0, "web fallback has no site nav / 'Open in Messages'");
   await web.waitForTimeout(400);
   await shot(web, "web-fallback");
-  // a reopened clip skips what the session already has: welcome → values → straight to done
-  const webNext = async (id, screenAfter) => {
-    await web.locator(`[data-clip-next='${id}']`).click({ force: true });
-    await web.waitForSelector(screenAfter, { timeout: 8000 });
-  };
-  await webNext("welcome", "[data-clip-next='value-0']");
-  await webNext("value-0", "[data-clip-next='value-1']");
-  await webNext("value-1", "[data-clip-next='value-2']");
-  await webNext("value-2", "[data-clip-onboarding][data-clip-screen='done']");
-  check(true, "reopened clip skipped the filled steps");
+  check(await web.locator("[data-clip-recap] >> text=I'll call you Bill").isVisible(), "done screen recaps what was set up");
   check((await web.locator("[data-clip-next='done']").getAttribute("href"))?.includes(`sid=${sid}`), "web 'Start in Messages' resumes the session");
   await shot(web, "web-done");
   await web.close();
+
+  // behind the scenes: the run dropdown lists the live session (and archived runs when there are any)
+  const db = await ctx.newPage();
+  await db.goto(BASE + "/db", { waitUntil: "domcontentloaded" });
+  await db.waitForSelector("[data-db-run-select]", { timeout: 20_000 });
+  const opts = await db.locator("[data-db-run-select] option").allTextContents();
+  check(opts.some((o) => o.startsWith("Live")), `/db run dropdown present (${opts.length} option(s))`);
+  await shot(db, "db-run-dropdown");
+  await db.close();
 } catch (e) {
   if (String(e?.message) !== "__done__") {
     ok = false;

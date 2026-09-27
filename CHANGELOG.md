@@ -443,3 +443,25 @@ where nothing could close the sheet or ring the phone.
 Verified: typecheck, lint, 152 unit tests, `next build`, and `scripts/e2e-app-clip.mjs` (full and `--call`) against a
 dev server of this tree: Contacts on by default, the download ring before launch, no overlap on the value pages,
 "Call me now" rings.
+
+
+## 15. Sounds, reopen on "You're set", a shorter stage menu, runs on /db, an unknown sender (seventh commit, 2026-09-27)
+
+- iMessage sounds (`src/lib/audio/imessage.ts`, WebAudio, no assets): the whoosh when your bubble leaves, the two-note
+  ding when one of Persona's arrives. Nothing plays for what is already there on load or after a restore; the send
+  gesture unlocks audio.
+- A reopened App Clip no longer starts on the welcome: `startScreenFor(state)` opens it on "You're set" when every
+  step is answered, on the first missing step when it was left half-way, and nothing renders until the resume state
+  is in (the launch screen covers the wait, 2.5 s ceiling).
+- The stage menu lost "Use demo inbox" and "Connect Gmail" (Gmail connects from the clip's Google screen or the
+  connect card); previous runs show three rows and scroll for the rest.
+- `/db` has a run dropdown in the top bar (live session or any archived run) and a View button per run: an archived
+  run renders read-only (slots, transcript, client events) with "Restore into the simulator" and "back to live".
+- Before the agent is named the thread header (and the incoming call) show an unknown sender: a grey silhouette over
+  `+1 (415) 555‑0134`, the way Messages shows a number that is not in Contacts; the agent's name and mark appear the
+  moment it is named. The App Clip card still says "Persona" (that is the app's name). The simulator's Contacts
+  toggle, which gates the App Clip bubble, is independent of this label.
+
+Verified: typecheck, lint, 152 unit tests, `next build`, `scripts/e2e-app-clip.mjs` against a dev server of this
+tree (the web fallback opens on the done screen; the header shows the number, then Jarvis; the /db run dropdown
+lists the live session).

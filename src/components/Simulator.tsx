@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { playReceived, playSent, unlockAudio } from "@/lib/audio/imessage";
 import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
 import { useSessionStore } from "@/lib/session/store";
@@ -15,6 +16,8 @@ import { SafariSheet } from "@/components/phone/SafariSheet";
 import { PHONE_H, PHONE_W, usePhoneScale } from "@/components/phone/usePhoneScale";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** What the thread header and the incoming call show before the agent has a name: a number, not a contact. */
+export const UNKNOWN_SENDER = "+1 (415) 555‑0134";
 
 /**
  * The phone: iMessage thread with the call screen overlaid when a call is
@@ -38,7 +41,9 @@ export function Simulator() {
 
   const [safariUrl, setSafariUrl] = useState<string | null>(null);
 
-  const contactName = agentName || "Persona";
+  // Until the user names their Persona the sender is just a number, the way an unknown contact reads in Messages
+  // (DESIGN §15.1: number → agent name after naming). The App Clip card itself still says "Persona": that is the app's name.
+  const contactName = agentName || UNKNOWN_SENDER;
   const callActive = call.state === "connecting" || call.state === "live";
   const showCall = screen === "call" && call.state !== "idle";
 
@@ -110,7 +115,31 @@ export function Simulator() {
     if (hydrated) void getBrain().start();
   }, [hydrated, sessionId, threadEmpty]);
 
+  // iMessage sounds: the whoosh when your bubble leaves, the ding when one of Persona's arrives.
+  // Everything present on the first render after hydration (or a restored run) is silent.
+  const seenIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!seenIds.current) {
+      seenIds.current = new Set(messages.map((m) => m.id));
+      return;
+    }
+    let ding = false;
+    for (const m of messages) {
+      if (seenIds.current.has(m.id)) continue;
+      seenIds.current.add(m.id);
+      if (m.role === "assistant") ding = true;
+    }
+    if (ding && document.visibilityState === "visible") playReceived();
+  }, [messages, hydrated]);
+  useEffect(() => {
+    // a restored or restarted run: nothing in it is new
+    seenIds.current = null;
+  }, [sessionId]);
+
   const onSend = (text: string, replyToId?: string) => {
+    unlockAudio();
+    playSent();
     const m = appendMessage({ role: "user", content: { kind: "text", text }, status: "sending", replyToId });
     setTimeout(() => {
       // don't downgrade a message the brain already marked as read
@@ -158,6 +187,7 @@ export function Simulator() {
                   {callActive && <CallBanner startedAt={call.startedAt} onReturn={() => setScreen("call")} />}
                   <IMessageThread
                     contactName={contactName}
+                    contactKnown={!!agentName}
                     senderInContacts={senderInContacts}
                     messages={messages}
                     typing={typing}

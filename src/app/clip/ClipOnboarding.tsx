@@ -97,18 +97,31 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
     [sid, state],
   );
 
-  // resume: what the session already has decides which steps to skip
+  // Resume: what the session already has decides where the clip opens. A finished onboarding opens on
+  // "You're set"; one left half-way opens on the first step still missing; a fresh one on the welcome.
+  // Nothing renders until that is known (the runner's launch screen covers the wait).
+  const [ready, setReady] = useState(!sid);
   useEffect(() => {
     if (!sid) return;
     let alive = true;
+    const settle = (s: ClipState | null) => {
+      if (!alive) return;
+      if (s) {
+        setState(s);
+        const start = startScreenFor(s);
+        if (start !== "welcome") setScreen(start);
+      }
+      setReady(true);
+    };
+    const timeout = setTimeout(() => settle(null), 2500);
     fetch(`/api/clip/state?sid=${encodeURIComponent(sid)}`, { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<ClipStateResponse>) : null))
-      .then((d) => {
-        if (alive && d?.state) setState(d.state);
-      })
-      .catch(() => undefined);
+      .then((d) => settle(d?.state ?? null))
+      .catch(() => settle(null))
+      .finally(() => clearTimeout(timeout));
     return () => {
       alive = false;
+      clearTimeout(timeout);
     };
   }, [sid]);
 
@@ -344,6 +357,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
       </header>
 
       <main className="relative flex-1 overflow-hidden">
+        {ready && (
         <AnimatePresence mode="wait" initial={false} custom={dir}>
           <motion.section key={`${screen}-${page}`} {...slide} className="absolute inset-0 flex flex-col overflow-hidden px-6 pb-2">
             {screen === "welcome" && (
@@ -506,6 +520,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
             )}
           </motion.section>
         </AnimatePresence>
+        )}
       </main>
 
       <AnimatePresence>{showStrip && <GetAppStrip key="strip" label={copy.get_app.label} onTap={getApp} onDismiss={() => setStripDismissed(true)} />}</AnimatePresence>
@@ -513,6 +528,20 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
       <div className={cn("shrink-0", embed ? "h-[30px]" : "h-[16px]")} />
     </div>
   );
+}
+
+/** Where a reopened clip starts: done when everything is answered, the first missing step when some are, else the welcome. */
+export function startScreenFor(s: ClipState): ClipScreen {
+  const stepFilled: Record<ClipStep, boolean> = {
+    user_name: s.steps.user_name !== "empty",
+    agent_name: s.steps.agent_name !== "empty",
+    gmail: s.steps.gmail !== "empty",
+    call_offer: s.call_offer !== "unasked",
+  };
+  const any = Object.values(stepFilled).some(Boolean);
+  if (!any) return "welcome";
+  for (const step of ["user_name", "agent_name", "gmail", "call_offer"] as const) if (!stepFilled[step]) return step;
+  return "done";
 }
 
 /** The body scrolls on its own; the footer never moves and nothing draws over it. */

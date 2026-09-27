@@ -24,6 +24,7 @@ const HOUR = 60 * 60 * 1000;
  */
 export function IMessageThread({
   contactName,
+  contactKnown = true,
   senderInContacts,
   messages,
   typing,
@@ -35,6 +36,8 @@ export function IMessageThread({
   onOpenInSafari,
 }: {
   contactName: string;
+  /** false until the agent is named: the header shows a grey silhouette over the number, as Messages does for an unknown sender */
+  contactKnown?: boolean;
   senderInContacts: boolean;
   messages: ChatMessage[];
   typing: boolean;
@@ -134,7 +137,7 @@ export function IMessageThread({
 
   return (
     <div ref={rootRef} className="relative h-full w-full select-none bg-screen">
-      <ThreadHeader name={contactName} />
+      <ThreadHeader name={contactName} known={contactKnown} />
 
       {/* Thread and composer share the space under the header. The composer is in flow, so
           the thread shrinks as the field grows (multi-line text, reply card) instead of

@@ -366,10 +366,10 @@ Rules:
 
 ## 15. Simulator UI
 
-1. Phone frame: header (number → agent name after naming), thread, composer. Bubbles: text, tapback, link card (Connect Gmail), App Clip bubble (Contacts-gated), contact card, voicemail with transcription, call log entry, summary card. The App Clip runs full screen inside the phone (system card → launch screen → the app; §19), and closing it hands the relay to the thread.
+1. Phone frame: header (an unknown sender's grey silhouette over a number → the agent's name and mark after naming), thread, composer. iMessage sounds, synthesized: a whoosh when your bubble leaves, a two-note ding when one of Persona's arrives (nothing on load or restore). Bubbles: text, tapback, link card (Connect Gmail), App Clip bubble (Contacts-gated), contact card, voicemail with transcription, call log entry, summary card. The App Clip runs full screen inside the phone (system card → launch screen → the app; §19), and closing it hands the relay to the thread.
 2. Call screen: incoming call with Accept/Decline, live captions, mute, hang up, "switch to text."
 3. Checklist to the right of the phone: You · Your need · Gmail · My name, done or not, labels only (values live in the brain view). Fills live via Realtime; a row tap edits; never presented as a form. Top-right: light/dark toggle; the stage chrome and the phone (iOS dark appearance) follow it.
-4. Brain view (small side panel): active beliefs with confidence and reason, last `next_best_ask`, latency p50/p95.
+4. Brain view (small side panel): active beliefs with confidence and reason, last `next_best_ask`, latency p50/p95. `/db` has a run dropdown in its top bar: the live session or any archived run, read-only (slots, transcript, client events), with Restore.
 5. Buttons the evaluator will use anyway: hang up, decline, close tab, switch to text, "use demo inbox."
 
 ## 16. Evaluation
@@ -473,6 +473,9 @@ headline per screen (Instrument Serif via `next/font`), system text for everythi
    | `gmail` | three read-only promises, Continue with Google (popup), "Use the demo inbox instead", "Not now" | OAuth / demo inbox via `markGmail`; skip → `declined` (`clip_skip`) |
    | `call_offer` | "Want me to call you to set up the rest?" Call me now / I'll text | `recordCallOfferAnswer` → `channel_pref`, `offer_call` settled |
    | `done` | "You're set, Bill." recap, Get the Persona app, Back to Messages (web: Start in Messages → `/?sid=`) | |
+
+   A reopened clip starts where the session is: on "You're set" once everything is answered, on the first missing step
+   when it was left half-way, on the welcome only when nothing has been captured (`startScreenFor`).
 
    A hairline "Get the Persona app · App Store" strip sits under every screen after the welcome (SKOverlay in the
    native clip); the done screen offers it again. Taps log `app_clip_cta { label: "get_app" }`.

@@ -1,6 +1,6 @@
 "use client";
 
-import { AppWindow, Database, Ellipsis, History, Inbox, Mail, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
+import { AppWindow, Database, Ellipsis, History, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -9,29 +9,6 @@ import { callController } from "@/lib/call/controller";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
 import { session, useSessionStore } from "@/lib/session/store";
 import { cn } from "@/lib/utils";
-import { connectUrl } from "@/components/progress/slotEdit";
-
-/** "Use demo inbox": connects the mock inbox for this session, then lets the brain react as if Gmail connected. */
-async function connectDemoInbox() {
-  const st = session.get();
-  st.logEvent("user.demo_inbox");
-  try {
-    const res = await fetch("/api/gmail/connect", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ session_id: st.sessionId, mock: true }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; email?: string; error?: string };
-    if (!res.ok || data.ok === false) {
-      session.get().logEvent("gmail.demo_failed", { status: res.status, error: data.error });
-      return;
-    }
-    await getBrain().refresh?.();
-    getBrain().notifyGmail?.("connected", data.email ?? "demo@persona.test");
-  } catch (e) {
-    session.get().logEvent("gmail.demo_failed", { error: String(e) });
-  }
-}
 
 /** "Send App Clip card": the bot drops the Meet-your-Persona App Clip link into the thread. */
 async function sendAppClipCard() {
@@ -51,8 +28,9 @@ async function sendAppClipCard() {
 }
 
 /**
- * Bottom-right control: open the behind-the-scenes page, restart the
- * simulation, ring the phone, or pick up a previous run.
+ * Bottom-right control: open the behind-the-scenes page, ring the phone, send the
+ * App Clip card, toggle Contacts, restart, or pick up a previous run. Gmail is connected
+ * from the App Clip's Google screen or the connect card, not from here.
  */
 export function StageMenu() {
   const [open, setOpen] = useState(false);
@@ -63,7 +41,6 @@ export function StageMenu() {
   const messageCount = useSessionStore((s) => s.messages.length);
   const senderInContacts = useSessionStore((s) => s.senderInContacts);
   const setSenderInContacts = useSessionStore((s) => s.setSenderInContacts);
-  const gmail = useSessionStore((s) => s.slots.gmail);
   const connection = useSessionStore((s) => s.connection);
 
   useEffect(() => {
@@ -110,26 +87,6 @@ export function StageMenu() {
                 }}
               />
               <MenuButton
-                icon={Inbox}
-                label={gmail.status === "filled" ? "Demo inbox connected" : "Use demo inbox"}
-                hint={gmail.status === "filled" ? `connected as ${gmail.value}` : "20 mock emails, incl. one poisoned message"}
-                disabled={gmail.status === "filled"}
-                onClick={() => {
-                  void connectDemoInbox();
-                  setOpen(false);
-                }}
-              />
-              <MenuButton
-                icon={Mail}
-                label="Connect Gmail"
-                hint="opens the consent page in a popup (read-only)"
-                disabled={gmail.status === "filled"}
-                onClick={() => {
-                  void getBrain().onLinkOpen("menu:gmail", connectUrl(sessionId));
-                  setOpen(false);
-                }}
-              />
-              <MenuButton
                 icon={AppWindow}
                 label="Send App Clip card"
                 hint={senderInContacts ? "the App Clip: Persona's onboarding, full screen" : "add Persona to Contacts first, or it renders as a plain link"}
@@ -161,16 +118,17 @@ export function StageMenu() {
                 <History className="h-3 w-3" /> Previous runs
               </span>
             </div>
-            <div className="max-h-[200px] overflow-y-auto px-2 pb-2">
+            {/* three rows tall; the rest scrolls */}
+            <div className="max-h-[168px] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]" data-stage-runs>
               {runs.length === 0 && <div className="px-2 py-2 text-[12px] text-ink/40">None yet. Restart to archive this one.</div>}
-              {runs.slice(0, 8).map((r) => (
+              {runs.map((r) => (
                 <button
                   key={r.id}
                   onClick={() => {
                     restoreRun(r.id);
                     setOpen(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-ink/5"
+                  className="flex h-[52px] w-full items-center justify-between rounded-lg px-2 text-left hover:bg-ink/5"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-[13px]">
@@ -183,11 +141,6 @@ export function StageMenu() {
                   <span className="text-[11px] text-imsg-blue">Restore</span>
                 </button>
               ))}
-              {runs.length > 8 && (
-                <Link href="/db#runs" target="_blank" className="block px-2 py-1.5 text-[12px] text-imsg-blue">
-                  See all {runs.length} runs
-                </Link>
-              )}
             </div>
           </motion.div>
         )}
