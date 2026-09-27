@@ -497,3 +497,28 @@ lists the live session).
 
 Verified: typecheck, lint, 152 unit tests, `next build`, `scripts/e2e-app-clip.mjs` full (contact card opens with
 the agent's name) and `--call` (the live voice run above).
+
+
+## 18. Cancelling Google still ends in a plan; the call prompt stops narrating (tenth commit, 2026-09-27)
+
+- **Consent cancelled, three ways, one outcome.** Cancel on Google's screen was already a decline. Closing the consent
+  window without choosing now counts too: the chat watches the popup (`ServerBrain.watchPopup`, 1.5 s grace) and
+  fires `gmail_declined` with reason `closed` (server: `declined`, `popup_closed`, read softly at 4); the App Clip's
+  Google screen watches its popup the same way and posts a `gmail` skip, so the wizard says "No problem" and moves on.
+  A timeout stays `failed`. In every case the next turn's hint demands one concrete plan for the need without Gmail
+  (the steps, what is needed from the user, the first thing done now), or asks for the need first when there is
+  none; the clip's relay hint carries the same when Google was passed on there. Gmail itself rests per the ledger.
+- **Call prompt** (`PROMPT_VERSION 2026-09-27.2`): tools are silent (no "saving that now", "that step is running"),
+  never describe how you will respond or echo the rules ("I'll paraphrase it back"), and a Gmail no on the call ends
+  in a plan.
+- `scripts/e2e-app-clip.mjs --gmail-cancel`: Continue with Google opens the real consent popup, the test sends it to
+  our callback with Google's `access_denied` (the state comes off the Google URL), the wizard moves on as declined,
+  and once the need is typed the reply is a plan with no Connect Gmail card and no Gmail ask.
+- **Real Gmail was never read.** `gmailFor()` returned the demo inbox whenever `MOCK_INBOX=true` was set, which it is
+  in every dev env, so a session that had just connected Google still read the 20 sample emails. Now a session with
+  tokens always reads its real inbox; the demo inbox is the session's own choice ("Use the demo inbox", cleared by a
+  later real connection) or the fallback for a session that never connected. DESIGN §12.5, README.
+- **A finished clip asked again.** The wizard fetched its resume state after mounting with a 2.5 s cap, and dev API
+  routes cold-compile slower than that, so a reopened clip fell back to the welcome screen. The runner now fetches the
+  state under the launch screen (8 s cap) and hands it in as `initialState`; the `/clip` page reads it on the server.
+  The first screen is decided before anything renders: "You're set" when done, the first missing step when half-way.

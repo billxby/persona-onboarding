@@ -109,7 +109,8 @@ export async function markGmail(session_id: string, status: Exclude<GmailStatus,
   const session = await patchSession(session_id, () => ({
     gmail_status: status,
     gmail_email: status === "connected" ? (email ?? null) : undefined,
-    mock_inbox: opts.mock ? true : undefined,
+    // a real connection clears an earlier demo-inbox choice; a demo connection sets it; a decline leaves it alone
+    mock_inbox: status === "connected" ? !!opts.mock : undefined,
     oauth_state: null,
   }) as Partial<SessionRow>);
   const turn = (session.turn ?? 0) + 1;
@@ -140,6 +141,8 @@ export async function markGmail(session_id: string, status: Exclude<GmailStatus,
           ? { receptivity: 5, signal: "deferred" as const, note: "skipped the Google step in the App Clip" }
           : reason === "clip_abandoned"
             ? { receptivity: 4, signal: "ignored" as const, note: "started Google in the App Clip, left before finishing" }
+            : reason === "popup_closed"
+              ? { receptivity: 4, signal: "ignored" as const, note: "closed the Google window without choosing" }
             : { receptivity: 4, signal: "ignored" as const, note: "link sent, no reaction before it timed out" };
     await mind("outcome", recordOutcome(session_id, { key: "connect_gmail", ...read, turn, actor: "system", evidence_ref: `gmail:${reason}` }));
   }

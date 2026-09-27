@@ -12,6 +12,7 @@ const BASE = arg("--base", process.env.BASE ?? "http://localhost:3000");
 const OUT = arg("--out", process.env.OUT ?? "./e2e-out");
 const CALL = process.argv.includes("--call"); // answer "Call me now" on the call screen and expect the phone to ring
 const LEAVE_EARLY = process.argv.includes("--leave-early"); // close the clip after the name: partial capture + relay
+const GMAIL_CANCEL = process.argv.includes("--gmail-cancel"); // Continue with Google, then cancel on the consent screen: still a plan
 const EXE = process.env.CHROME ?? `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 fs.mkdirSync(OUT, { recursive: true });
 const t0 = Date.now();
@@ -106,9 +107,13 @@ try {
   await clip.locator("[data-clip-input='user_name']").fill("Bill");
   await tap("[data-clip-next='user_name']");
   await onScreen("agent_name");
-  await page.waitForTimeout(700);
+  // the answer is posted the moment Continue is tapped; give a cold dev route a few seconds to land it
   let v = await view(sid);
-  check(v.session?.user_name === "Bill", `user_name landed on the session before the next screen (${v.session?.user_name})`);
+  for (let i = 0; i < 12 && v.session?.user_name !== "Bill"; i++) {
+    await page.waitForTimeout(500);
+    v = await view(sid);
+  }
+  check(v.session?.user_name === "Bill", `user_name landed on the session by the next screen (${v.session?.user_name})`);
   await shot(page, "agent-name");
 
   if (LEAVE_EARLY) {
@@ -136,6 +141,50 @@ try {
   check(v.session?.agent_name === "Jarvis", `agent_name landed (${v.session?.agent_name})`);
   check(v.messages.some((m) => m.kind === "contact_card"), "contact card row inserted by the clip's answer");
   await shot(page, "google");
+
+  if (GMAIL_CANCEL) {
+    // Continue with Google opens the consent popup; we stand in for the user hitting Cancel there by sending the popup
+    // to our callback with Google's error (the state comes off the real Google URL). The wizard must take it as a no,
+    // move on, and the thread must still end in a concrete plan once the need is known.
+    // the state rides on the 302 out of /api/oauth/google/start (its Location header); Google's own page may be an
+    // error when this base URL is not a registered redirect URI, which is fine for this test
+    const startRes = ctx.waitForEvent("response", { predicate: (r) => r.url().includes("/api/oauth/google/start"), timeout: 15_000 });
+    const [popup, res] = await Promise.all([page.waitForEvent("popup", { timeout: 15_000 }), startRes, tap("[data-clip-secondary='gmail-connect']")]);
+    const loc = res.headers()["location"] ?? "";
+    const state = loc ? new URL(loc).searchParams.get("state") : null;
+    check(!!state && loc.includes("accounts.google.com"), `consent popup sent to Google with a state (${loc.slice(0, 60)}…)`);
+    await page.waitForTimeout(800);
+    await popup.goto(`${BASE}/api/oauth/google/callback?error=access_denied&state=${encodeURIComponent(state ?? "")}`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
+    await onScreen("call_offer", 15_000);
+    v = await view(sid);
+    check(v.session?.gmail_status === "declined", `gmail_status declined after Cancel (${v.session?.gmail_status})`);
+    await shot(page, "google-cancelled");
+    await tap("[data-clip-secondary='call-no']");
+    await onScreen("done");
+    await tap("[data-clip-next='done']");
+    await page.waitForSelector("[data-app-clip-runner]", { state: "detached", timeout: 8000 });
+    await page.waitForFunction((n) => document.querySelectorAll(".bubble-in[data-bubble]").length > n, openerCount, { timeout: 90_000 });
+    await page.waitForTimeout(3000);
+    const relay = (await inTexts()).slice(openerCount);
+    for (const b of relay) log("A:", b.slice(0, 200));
+    check(!relay.some((b) => GMAIL_ASKS.some((re) => re.test(b))), "relay does not ask for Gmail after the cancel");
+    // now the need: the reply must be a concrete plan without Gmail, no connect card
+    const before = (await inTexts()).length;
+    await page.fill("textarea", "I need to cancel my gym membership before it renews next month");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction((n) => document.querySelectorAll(".bubble-in[data-bubble]").length > n, before, { timeout: 120_000 });
+    await page.waitForTimeout(4000);
+    const plan = (await inTexts()).slice(before);
+    for (const b of plan) log("A(plan):", b.slice(0, 220));
+    check(plan.length >= 1, "a reply followed the need");
+    check(!plan.some((b) => GMAIL_ASKS.some((re) => re.test(b))), "the plan does not ask to connect Gmail");
+    v = await view(sid);
+    check(!v.messages.some((m) => m.kind === "link_card" && String(m.content ?? "").includes("/connect")), "no Connect Gmail card was sent after the cancel");
+    check(plan.join(" ").length > 80, "the plan has substance (more than one short line)");
+    await shot(page, "plan-without-gmail");
+    throw new Error("__done__");
+  }
 
   // Google: the demo inbox (the same route the connect page uses), then the check and auto-advance
   await tap("[data-clip-link='gmail-demo']");

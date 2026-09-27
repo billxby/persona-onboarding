@@ -33,7 +33,7 @@ polls the session every 2 s instead. Everything still works; the `/db` page show
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser: anonymous sign-in and Realtime under RLS |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only. Route handlers write sessions, messages, events, tokens |
 | `APP_URL` | Public base URL; builds the OAuth redirect and the link cards |
-| `MOCK_INBOX` | `true` routes every Gmail tool to `data/mock_inbox.json`. Set `false` on a deployment with Google configured to reach the real inbox |
+| `MOCK_INBOX` (fallback only: a real Google connection always reads the real inbox) | `true` routes every Gmail tool to `data/mock_inbox.json`. Set `false` on a deployment with Google configured to reach the real inbox |
 
 Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTIME_VOICE`, `TRANSCRIBE_MODEL`).
 

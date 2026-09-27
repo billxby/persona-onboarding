@@ -16,6 +16,7 @@ const FULL_RESYNC_MS = 60_000;
 const WELCOME_BACK_MS = 30 * 60 * 1000;
 const GMAIL_TIMEOUT_MS = 90_000;
 const GMAIL_DEDUPE_MS = 30_000;
+const POPUP_CLOSED_GRACE_MS = 1500;
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -199,6 +200,8 @@ export class ServerBrain implements OnboardingBrain {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.gmailTimer) clearTimeout(this.gmailTimer);
     this.pollTimer = this.retryTimer = this.debounceTimer = this.gmailTimer = null;
+    if (this.popupTimer) clearInterval(this.popupTimer);
+    this.popupTimer = null;
     this.bootedFor = null;
     this.lastFullSyncAt = 0;
     this.clipOpen = false;
@@ -366,12 +369,16 @@ export class ServerBrain implements OnboardingBrain {
       u = null;
     }
     if (u && u.origin === window.location.origin && u.pathname === "/connect") {
-      window.open(u.toString(), "persona-connect", "popup,width=520,height=720");
+      const popup = window.open(u.toString(), "persona-connect", "popup,width=520,height=720");
       if (this.gmailTimer) clearTimeout(this.gmailTimer);
       this.gmailTimer = setTimeout(() => {
         this.gmailTimer = null;
         if (session.get().slots.gmail.status === "pending") void this.requestReply("gmail_declined", "timeout");
       }, GMAIL_TIMEOUT_MS);
+      // the consent window closed without an answer (the X, not Google's Cancel): a decline, after a short grace for a callback in flight
+      this.watchPopup(popup, () => {
+        if (session.get().slots.gmail.status === "pending") void this.requestReply("gmail_declined", "closed");
+      });
       return;
     }
     if (u && u.origin === window.location.origin && u.pathname === "/clip") {
@@ -383,6 +390,20 @@ export class ServerBrain implements OnboardingBrain {
       return;
     }
     // Every other link is shown by the phone's Safari sheet (Simulator); nothing leaves the phone.
+  }
+
+  private popupTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Fires `onClosed` ~1.5 s after the popup is gone (a callback may still be landing); stops itself on teardown. */
+  private watchPopup(popup: Window | null, onClosed: () => void): void {
+    if (this.popupTimer) clearInterval(this.popupTimer);
+    if (!popup) return;
+    this.popupTimer = setInterval(() => {
+      if (!popup.closed) return;
+      if (this.popupTimer) clearInterval(this.popupTimer);
+      this.popupTimer = null;
+      setTimeout(onClosed, POPUP_CLOSED_GRACE_MS);
+    }, 500);
   }
 
   /** Client-side UI events the server should know about (App Clip card, runner, CTAs). */

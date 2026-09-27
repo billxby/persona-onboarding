@@ -100,13 +100,16 @@ export class RealGmail implements GmailClient {
 }
 
 /**
- * The inbox for a session: the demo inbox when the session (or the deployment) asked for it
- * or Google isn't configured; the real one when tokens exist; null otherwise.
+ * The inbox for a session. A real Google connection always wins: when the session has tokens, that is the
+ * inbox. The demo inbox is used when the session chose it ("Use the demo inbox") or, with `MOCK_INBOX=true`
+ * (or no Google credentials on the deployment), as the fallback for a session that never connected.
  * Callers still gate on `session.gmail_status === "connected"` for the conversation logic.
  */
 export async function gmailFor(session: SessionRow): Promise<GmailClient | null> {
-  if (session.mock_inbox || env.MOCK_INBOX || !googleConfigured()) return mockGmail();
-  const c = await clientForSession(session.id);
-  if (!c) return null;
-  return new RealGmail(google.gmail({ version: "v1", auth: c.auth }), session.gmail_email ?? c.email ?? "me");
+  if (session.mock_inbox) return mockGmail();
+  if (googleConfigured()) {
+    const c = await clientForSession(session.id);
+    if (c) return new RealGmail(google.gmail({ version: "v1", auth: c.auth }), session.gmail_email ?? c.email ?? "me");
+  }
+  return env.MOCK_INBOX || !googleConfigured() ? mockGmail() : null;
 }

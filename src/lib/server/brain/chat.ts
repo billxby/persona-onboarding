@@ -93,10 +93,14 @@ function triggerHint(trigger: ChatTrigger, reason: string | undefined, session: 
     }
     case "gmail_connected":
       return `Gmail just connected${session.gmail_email ? ` as ${session.gmail_email}` : ""}. Call recent_emails(3) FIRST, then give one real observation (unread count, who needs a reply) and ask ONE question, e.g. offer to draft the most urgent reply.`;
-    case "gmail_declined":
-      return reason === "timeout"
-        ? "The Gmail connect timed out. Acknowledge in one line, no guilt, and deliver one concrete plan for the need without Gmail (you may offer the demo inbox link once via request_gmail_connect only if they ask)."
-        : "Gmail was declined. Acknowledge in one line, no guilt, and deliver one concrete plan for the need without Gmail.";
+    case "gmail_declined": {
+      const plan = session.need
+        ? `Then deliver ONE concrete plan for "${session.need}" without Gmail: the exact steps you will take or they should, what you need from them (a forwarded email, a date, a name), and the first thing you will do now. No Gmail talk unless they ask.`
+        : "Then ask for the one thing they want done (the need); plan it without Gmail once you have it. No Gmail talk unless they ask.";
+      if (reason === "timeout") return `The Gmail connect timed out. Acknowledge in one line, no guilt. ${plan}`;
+      if (reason === "closed") return `They closed the Google window without choosing. One light line ("no problem, we can do it later"), no guilt. ${plan}`;
+      return `Gmail was declined on Google's screen. Acknowledge in one line, no guilt. ${plan}`;
+    }
     case "welcome_back":
       return "The user came back after a while. Greet by name if known, recall the need in a few words, and offer to pick up where you left off. One question max.";
     case "silence_end":
@@ -237,7 +241,8 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
     }
 
     if (trigger === "gmail_declined" && session.gmail_status === "pending") {
-      await markGmail(session_id, reason === "timeout" ? "failed" : "declined");
+      // timeout → failed (no answer); closed the window → declined, read softly; anything else → a decline
+      await markGmail(session_id, reason === "timeout" ? "failed" : "declined", null, reason === "closed" ? { reason: "popup_closed" } : {});
       session = (await getSession(session_id)) ?? session;
     }
 

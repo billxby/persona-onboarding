@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
+import { clipState } from "@/lib/server/clipAnswer";
 import { loadClipContent } from "@/lib/server/clipContent";
+import { getSession } from "@/lib/server/session";
+import type { ClipState } from "@/lib/shared/clip";
 import { ClipOnboarding } from "./ClipOnboarding";
 
 /**
  * The App Clip's invocation URL and its web fallback: the app's onboarding (DESIGN §19).
  * On an iPhone with the clip published this page is what the App Clip card points at (Smart App
  * Banner below); everywhere else it is the same wizard as a normal page, no site chrome, centred
- * in a phone-width column. `?sid=` is the session the clip writes to.
+ * in a phone-width column. `?sid=` is the session the clip writes to; what that session already
+ * has is read here on the server, so the page opens on the right screen with no flash.
  */
 
 const APP_STORE_ID = process.env.APP_STORE_ID || "000000000";
@@ -30,13 +34,23 @@ export const metadata: Metadata = {
 export default async function ClipPage({ searchParams }: { searchParams: Promise<{ sid?: string }> }) {
   const { sid } = await searchParams;
   const content = loadClipContent();
+  const valid = sid && UUID.test(sid) ? sid : undefined;
+  let initialState: ClipState | null = null;
+  if (valid) {
+    try {
+      const session = await getSession(valid);
+      if (session) initialState = await clipState(session);
+    } catch {
+      initialState = null;
+    }
+  }
   return (
     <main className="min-h-dvh bg-clip-bg text-clip-ink" data-clip-page>
       <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col">
         {/* the status-bar gap a phone would have */}
         <div className="h-[24px] shrink-0" />
         <div className="min-h-0 flex-1">
-          <ClipOnboarding content={content} sid={sid && UUID.test(sid) ? sid : undefined} embed={false} />
+          <ClipOnboarding content={content} sid={valid} embed={false} initialState={initialState} />
         </div>
       </div>
     </main>

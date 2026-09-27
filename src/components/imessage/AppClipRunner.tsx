@@ -4,10 +4,11 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ClipOnboarding, type ClipDoneDetail } from "@/app/clip/ClipOnboarding";
 import type { LinkPreview } from "@/lib/session/types";
-import type { ClipContent } from "@/lib/shared/clip";
+import type { ClipContent, ClipState, ClipStateResponse } from "@/lib/shared/clip";
 import { PersonaAvatar } from "./Avatar";
 
 const SPLASH_MS = 650;
+const RESUME_MAX_MS = 8000;
 
 /**
  * The App Clip *running* inside the phone (what iOS shows after the user taps Open on the App Clip
@@ -19,6 +20,8 @@ export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (
   const [splashDone, setSplashDone] = useState(false);
   const [content, setContent] = useState<ClipContent | null>(null);
   const [failed, setFailed] = useState(false);
+  /** what the session already has (undefined while loading; null when there is no session or it failed) */
+  const [resume, setResume] = useState<ClipState | null | undefined>(undefined);
   const appName = link.appClip?.appName ?? "Persona";
 
   const sid = useMemo(() => {
@@ -48,6 +51,22 @@ export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (
     };
   }, []);
 
+  // what the session already has, fetched under the launch screen so the wizard opens on the right screen
+  // (a finished onboarding opens on "You're set", never the welcome again); capped so a slow route can't hang the launch
+  useEffect(() => {
+    if (!sid) return; // nothing to resume without a session; the render below treats that as "known"
+    let alive = true;
+    const cap = setTimeout(() => alive && setResume((r) => (r === undefined ? null : r)), RESUME_MAX_MS);
+    fetch(`/api/clip/state?sid=${encodeURIComponent(sid)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<ClipStateResponse>) : null))
+      .then((d) => alive && setResume(d?.state ?? null))
+      .catch(() => alive && setResume(null));
+    return () => {
+      alive = false;
+      clearTimeout(cap);
+    };
+  }, [sid]);
+
   const done = (d: ClipDoneDetail) => onClose({ screen: d.screen, completed: d.completed, call: d.call });
 
   return (
@@ -63,7 +82,7 @@ export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (
       {/* room for the system status bar */}
       <div className="h-[54px] shrink-0" />
 
-      {!splashDone || (!content && !failed) ? (
+      {!splashDone || (!content && !failed) || (content && sid && resume === undefined) ? (
         <motion.div key="splash" data-app-clip-splash initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-1 flex-col items-center justify-center gap-4">
           <PersonaAvatar size={92} className="rounded-[26px] shadow-lg" />
           <div className="text-[20px] font-semibold tracking-tight">{appName}</div>
@@ -78,7 +97,7 @@ export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (
         </div>
       ) : (
         <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className="min-h-0 flex-1">
-          <ClipOnboarding content={content} sid={sid} embed onDone={done} />
+          <ClipOnboarding content={content} sid={sid} embed initialState={resume ?? null} onDone={done} />
         </motion.div>
       )}
     </motion.div>

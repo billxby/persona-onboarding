@@ -121,5 +121,12 @@ export function clipClosedHint(s: SessionRow, cap: ClipCapture, ringing: boolean
       : "In one or two short bubbles: acknowledge what they set up (use their name; if they named you, own the name), never re-ask any of it, then continue with next_best_ask.",
   ];
   if (partial && !ringing) lines.push("They left before the end; what is missing is still on your mind. Ask only what next_best_ask names, or nothing.");
+  if (!ringing && (s.gmail_status === "declined" || s.gmail_status === "failed")) {
+    lines.push(
+      s.need
+        ? `Google was passed on: give ONE concrete plan for "${s.need}" without it (your exact steps, what you need from them, the first thing you do now). No Gmail talk unless they ask.`
+        : "Google was passed on: no Gmail talk; once they name what they want done, plan it without Gmail.",
+    );
+  }
   return lines.join(" ");
 }

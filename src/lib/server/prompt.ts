@@ -9,7 +9,7 @@ import { askPlan, mindPlan, stateBlock, turnOf, type MindView } from "./state";
  * Static parts first, dynamic parts last, so the static prefix can be cached by the provider.
  * Files live in prompts/*.md and are read from disk (cached in production).
  */
-export const PROMPT_VERSION = "2026-09-27.1";
+export const PROMPT_VERSION = "2026-09-27.2";
 
 /** Rough budget check: ~4 chars per token. The whole prompt must stay under 1,500 tokens. */
 export const PROMPT_TOKEN_BUDGET = 1500;

@@ -28,24 +28,33 @@ interface Props {
   sid?: string;
   /** inside the simulated phone (true) or the web fallback page (false) */
   embed: boolean;
+  /**
+   * What the session already has, fetched by the host before mounting (the runner during its launch screen,
+   * the /clip page on the server): decides the first screen with no wait and no flash. `null` = fetched, nothing
+   * or failed; `undefined` = not fetched, the component fetches itself.
+   */
+  initialState?: ClipState | null;
   onDone?: (detail: ClipDoneDetail) => void;
 }
 
 type GmailPhase = "idle" | "pending" | "connected" | "declined";
 
-const GMAIL_POLL_MS = 2000;
+const GMAIL_POLL_MS = 1000;
 const GMAIL_POLL_MAX_MS = 90_000;
+const POPUP_CLOSED_GRACE_MS = 1500;
 const SAVE_RACE_MS = 2500;
+/** how long the wizard waits for the resume state before falling back to the welcome (dev routes cold-compile slowly) */
+const RESUME_MAX_MS = 8000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
+export function ClipOnboarding({ content, sid, embed, initialState, onDone }: Props) {
   const copy = content.onboarding;
   const reduce = useReducedMotion();
-  const [screen, setScreen] = useState<ClipScreen>("welcome");
+  const [screen, setScreen] = useState<ClipScreen>(() => (initialState ? startScreenFor(initialState) : "welcome"));
   const [page, setPage] = useState(0);
   const [dir, setDir] = useState<1 | -1>(1);
-  const [state, setState] = useState<ClipState | null>(null);
+  const [state, setState] = useState<ClipState | null>(initialState ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<{ user_name?: string; agent_name?: string; gmail?: "connected" | "skipped"; call?: "yes" | "no" }>({});
@@ -54,6 +63,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
   const [gmailNote, setGmailNote] = useState<string | null>(null);
   const [stripDismissed, setStripDismissed] = useState(false);
   const doneRef = useRef(false);
+  const popupRef = useRef<Window | null>(null);
 
   // ------------------------------------------------------------------ api
   const report = useCallback(
@@ -100,9 +110,9 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
   // Resume: what the session already has decides where the clip opens. A finished onboarding opens on
   // "You're set"; one left half-way opens on the first step still missing; a fresh one on the welcome.
   // Nothing renders until that is known (the runner's launch screen covers the wait).
-  const [ready, setReady] = useState(!sid);
+  const [ready, setReady] = useState(!sid || initialState !== undefined);
   useEffect(() => {
-    if (!sid) return;
+    if (!sid || initialState !== undefined) return;
     let alive = true;
     const settle = (s: ClipState | null) => {
       if (!alive) return;
@@ -113,7 +123,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
       }
       setReady(true);
     };
-    const timeout = setTimeout(() => settle(null), 2500);
+    const timeout = setTimeout(() => settle(null), RESUME_MAX_MS);
     fetch(`/api/clip/state?sid=${encodeURIComponent(sid)}`, { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<ClipStateResponse>) : null))
       .then((d) => settle(d?.state ?? null))
@@ -123,7 +133,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
       alive = false;
       clearTimeout(timeout);
     };
-  }, [sid]);
+  }, [sid, initialState]);
 
   // ------------------------------------------------------------------ flow
   const filled = useCallback(
@@ -246,11 +256,27 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
     };
     window.addEventListener("message", onMessage);
     const started = Date.now();
+    let closedAt: number | null = null;
+    let settled = false;
     const timer = setInterval(async () => {
+      if (settled) return;
+      // the consent window closed without choosing (the X, not Google's Cancel): "not now", after a short grace for a callback in flight
+      const popup = popupRef.current;
+      if (popup && popup.closed && closedAt === null) closedAt = Date.now();
       const s = await fetchState();
-      if (s?.gmail_status === "connected") gmailDone("connected", s.gmail_email);
-      else if (s?.gmail_status === "declined" || s?.gmail_status === "failed") gmailDone("declined");
-      else if (Date.now() - started > GMAIL_POLL_MAX_MS) {
+      if (settled) return;
+      if (s?.gmail_status === "connected") {
+        settled = true;
+        gmailDone("connected", s.gmail_email);
+      } else if (s?.gmail_status === "declined" || s?.gmail_status === "failed") {
+        settled = true;
+        gmailDone("declined");
+      } else if (closedAt !== null && Date.now() - closedAt > POPUP_CLOSED_GRACE_MS) {
+        settled = true;
+        await postAnswer("gmail", CLIP_SKIP);
+        gmailDone("declined");
+      } else if (Date.now() - started > GMAIL_POLL_MAX_MS) {
+        settled = true;
         setGmail("idle");
         setGmailNote("That took too long. Try again, or skip for now.");
       }
@@ -259,7 +285,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
       window.removeEventListener("message", onMessage);
       clearInterval(timer);
     };
-  }, [gmail, fetchState, gmailDone]);
+  }, [gmail, fetchState, gmailDone, postAnswer]);
 
   const connectGoogle = useCallback(() => {
     if (!sid) {
@@ -273,7 +299,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
     setGmailNote(null);
     setGmail("pending");
     report("google_connect");
-    window.open(`/api/oauth/google/start?sid=${encodeURIComponent(sid)}&via=clip`, "persona-connect", "popup,width=520,height=720");
+    popupRef.current = window.open(`/api/oauth/google/start?sid=${encodeURIComponent(sid)}&via=clip`, "persona-connect", "popup,width=520,height=720");
   }, [sid, state, report]);
 
   const useDemo = useCallback(async () => {
