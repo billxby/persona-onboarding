@@ -8,7 +8,7 @@ import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs"
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
 import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type SlotKey, type SlotStatus } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
-import { eligibility } from "@/lib/memory/intentions";
+import { builtinForSlot, eligibility } from "@/lib/memory/intentions";
 import type { BeliefStatus, IntentionStatus } from "@/lib/shared/types";
 import { cn, formatDuration } from "@/lib/utils";
 import { useHydrated } from "@/components/Simulator";
@@ -261,7 +261,10 @@ function useNow(intervalMs = 30_000) {
 function MindCard() {
   const intentions = useSessionStore((st) => st.intentions);
   const turn = useSessionStore((st) => st.turn);
+  const nextBestAsk = useSessionStore((st) => st.nextBestAsk);
   const now = useNow();
+  // the one item the model is told to raise this turn (next_best_ask and ON MY MIND are one decision; DESIGN §13b rule 6)
+  const raiseKey = nextBestAsk?.slot ? (builtinForSlot(nextBestAsk.slot)?.key ?? null) : null;
   const rows = useMemo(() => {
     const rank = (s: IntentionStatus) => (s === "asked" ? 0 : s === "open" ? 1 : s === "done" ? 2 : 3);
     return [...intentions].sort((a, b) => rank(a.status) - rank(b.status) || a.priority - b.priority || a.key.localeCompare(b.key));
@@ -315,7 +318,13 @@ function MindCard() {
                     </td>
                     <td className="px-3 py-1.5 font-mono text-[11.5px]">{r.nudges}×</td>
                     <td className="px-3 py-1.5 text-[12px]">
-                      {settled ? r.reason ?? r.status : e.eligible ? <span className="text-emerald-700">eligible now</span> : <span className="text-black/60">{e.why}{when && e.msLeft > 0 ? ` (${when})` : ""}</span>}
+                      {settled ? (
+                        r.reason ?? r.status
+                      ) : e.eligible ? (
+                        r.key === raiseKey ? <span className="font-medium text-emerald-700">raise now</span> : <span className="text-black/60">eligible, waits</span>
+                      ) : (
+                        <span className="text-black/60">{e.why}{when && e.msLeft > 0 ? ` (${when})` : ""}</span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-[12px] text-black/55">
                       {r.last_approach && <div className="italic">“{r.last_approach}”</div>}

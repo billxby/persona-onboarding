@@ -341,7 +341,8 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
   // Output guard: local checks, then Haiku. On a miss, rewrite once.
   const guard: Record<string, unknown> = { ok: true, regenerated: false, source: "none" };
   if (bubbles.length) {
-    const verdict = await checkReply({ session: current, beliefs: await activeBeliefs(session_id), bubbles });
+    // the guard reads the mind as it is after the tools ran, so it judges against the same plan the reply should follow
+    const verdict = await checkReply({ session: current, beliefs: await activeBeliefs(session_id), bubbles, mind: await mindFor(session_id).catch(() => mind) });
     guard.ok = verdict.ok;
     guard.source = verdict.source;
     if (!verdict.ok && verdict.issue) {

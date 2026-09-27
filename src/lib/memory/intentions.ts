@@ -70,7 +70,7 @@ export const BUILTIN_INTENTIONS: BuiltinIntention[] = [
     priority: 2,
     sticky: true,
     channels: BOTH,
-    cue: /off your plate|one thing (you|to)|what (do|would|can) (you|i) (want|need|do|help)|which (one|of (these|those))|take care of|what'?s (bugging|nagging|on your list)|keep meaning to/i,
+    cue: /off your plate|one thing (you|to|i)|what (do|would|can) (you|i) (want|need|do|help)|help you (knock out|tackle|get done|sort out|handle)|which (one|of (these|those))|take care of|what'?s (bugging|nagging|on your list)|keep meaning to/i,
     angles: ["open question: one thing off their plate this week", "three concrete options: inbox cleanup, cancelling subscriptions, booking an appointment", "the smallest start: want me to begin with the inbox?"],
   },
   {
@@ -365,11 +365,25 @@ export function toIntentionRows(session_id: string, state: Mind): Intention[] {
 
 export const ON_MY_MIND_MAX_CHARS = 720;
 
-const byPriority = (a: IntentionRecord, b: IntentionRecord) => a.priority - b.priority || a.key.localeCompare(b.key);
+export const byPriority = (a: Pick<IntentionRecord, "priority" | "key">, b: Pick<IntentionRecord, "priority" | "key">) => a.priority - b.priority || a.key.localeCompare(b.key);
 
-/** Open intentions this channel may raise: asked first (short, and it stops a re-ask), then eligible, then snoozed. */
-export function openIntentions(mind: Iterable<IntentionRecord>, channel: ServerChannel, turn: number, nowMs: number): { rec: IntentionRecord; state: Eligibility }[] {
-  const rank = (e: Eligibility, r: IntentionRecord) => (r.status === "asked" ? 0 : e.eligible ? 1 : 2);
+/**
+ * The turn's decision, made once by next_best_ask (src/lib/server/state.ts) and shown here so the
+ * two never disagree: `raise` is the one intention to bring up this turn; `holds` says, per key,
+ * why an intention the ledger calls eligible still waits (one ask at a time, Gmail only after the
+ * need, the agent's name after the first useful result, ...).
+ */
+export interface MindPlan {
+  raise: string | null;
+  holds: Record<string, string>;
+}
+
+/**
+ * Open intentions this channel may raise: the one to raise first, then asked (short, and it stops
+ * a re-ask), then eligible, then snoozed.
+ */
+export function openIntentions(mind: Iterable<IntentionRecord>, channel: ServerChannel, turn: number, nowMs: number, raise: string | null = null): { rec: IntentionRecord; state: Eligibility }[] {
+  const rank = (e: Eligibility, r: IntentionRecord) => (raise !== null && r.key === raise ? 0 : r.status === "asked" ? 1 : e.eligible ? 2 : 3);
   return [...mind]
     .filter((r) => (r.status === "open" || r.status === "asked") && r.channels.includes(channel))
     .map((rec) => ({ rec, state: eligibility(rec, turn, nowMs) }))
@@ -383,17 +397,24 @@ export function nextIntention(mind: Iterable<IntentionRecord>, channel: ServerCh
 
 /**
  * ON MY MIND block for the prompt. One line per open intention (capped), plus one line
- * summarising what is done or dropped so the model never re-raises those.
+ * summarising what is done or dropped so the model never re-raises those. With a `plan`
+ * the block is the same decision as next_best_ask: exactly one line reads "raise now" and
+ * every other eligible line says why it waits, so "eligible" never contradicts the ask.
  */
-export function onMyMindBlock(mind: Iterable<IntentionRecord>, channel: ServerChannel, turn: number, nowMs: number): string {
+export function onMyMindBlock(mind: Iterable<IntentionRecord>, channel: ServerChannel, turn: number, nowMs: number, plan?: MindPlan): string {
   const all = [...mind];
-  const head = "ON MY MIND (my own list: raise at most one per turn, only when eligible now, only if it serves the task)";
+  const head = plan
+    ? 'ON MY MIND (my list. Raise only the item marked "raise now", one per reply, woven into the help)'
+    : "ON MY MIND (my own list: raise at most one per turn, only when eligible now, only if it serves the task)";
   if (all.length === 0) return `${head}\n(nothing yet)`;
   const lines: string[] = [head];
   let used = head.length;
   let truncated = false;
-  for (const { rec, state } of openIntentions(all, channel, turn, nowMs)) {
-    const bits: string[] = [`- ${rec.key}: ${state.why}`];
+  for (const { rec, state } of openIntentions(all, channel, turn, nowMs, plan?.raise ?? null)) {
+    // the plan may raise a snoozed item on purpose (the need, when there is nothing to do without one): the block follows the plan
+    const raising = !!plan && rec.key === plan.raise && rec.status !== "asked";
+    const status = raising ? (state.eligible ? "raise now" : `raise now (${state.why}, but nothing to do without it: new angle)`) : !plan || !state.eligible ? state.why : `not now (${plan.holds[rec.key] ?? "one ask at a time"})`;
+    const bits: string[] = [`- ${rec.key}: ${status}`];
     if (rec.status === "asked") {
       // short on purpose: the point is "do not ask again"; the scoring comes next turn
       bits.push(`raised ${rec.nudges}×`);
@@ -404,7 +425,8 @@ export function onMyMindBlock(mind: Iterable<IntentionRecord>, channel: ServerCh
     } else {
       bits.push(rec.goal);
     }
-    if (state.eligible && rec.nudges > 0) {
+    // the next untried angle, for the item being raised (or every eligible one when no plan was given)
+    if (rec.nudges > 0 && (raising || (!plan && state.eligible))) {
       const angle = nextAngle(rec);
       if (angle) bits.push(`try a different angle: ${angle}`);
     }
@@ -444,18 +466,23 @@ const asking = (bubbles: string[]) => bubbles.map((b) => b.replace(/\s+/g, " ").
 /**
  * Which open intentions did this reply raise? A bubble that asks something and matches the
  * intention's cue counts; so does the first asking bubble while next_best_ask pointed at the
- * intention's slot. The whole bubble is the approach (it carries the framing). One nudge per key.
+ * intention's slot (the model was told to ask it, however it framed it). Gmail is the exception:
+ * its ask is the link card (request_gmail_connect logs that nudge itself) or explicit words; any
+ * other question while Gmail is next is task talk, and counting it would inflate the backoff.
+ * The whole bubble is the approach (it carries the framing). One nudge per key.
  */
 export function detectNudges(bubbles: string[], mind: Iterable<IntentionRecord>, nbaSlot: SlotName | null, channel: ServerChannel): DetectedNudge[] {
   const questions = asking(bubbles);
   if (questions.length === 0) return [];
+  // a question that plainly asks for another built-in (the name, when the plan said need) belongs to that one, never to the plan's slot
+  const cued = new Set(questions.filter((q) => BUILTIN_INTENTIONS.some((b) => b.cue.test(q))));
   const out: DetectedNudge[] = [];
   const seen = new Set<string>();
   for (const rec of mind) {
     if (rec.status === "done" || rec.status === "dropped" || !rec.channels.includes(channel)) continue;
     const b = builtinFor(rec.key);
     const hit = b ? questions.find((q) => b.cue.test(q)) : undefined;
-    const viaNba = nbaSlot !== null && rec.slot === nbaSlot ? questions[0] : undefined;
+    const viaNba = nbaSlot !== null && rec.slot === nbaSlot && rec.slot !== "gmail" && !cued.has(questions[0]) ? questions[0] : undefined;
     const approach = hit ?? viaNba;
     if (!approach || seen.has(rec.key)) continue;
     seen.add(rec.key);

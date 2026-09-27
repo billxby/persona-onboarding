@@ -270,6 +270,16 @@ describe("detecting a nudge in the reply", () => {
     const done = applyIntention(m, ev({ key: "get_name", op: "done", turn: 1 }));
     expect(detectNudges(["What should I call you?"], done.values(), "user_name", "text")).toEqual([]);
   });
+  it("a question that plainly asks for one built-in is never credited to the slot the plan named", () => {
+    // the plan said need, the model asked the name anyway: that is a name nudge, not a need nudge
+    expect(detectNudges(["No worries.", "What should I call you, by the way?"], m.values(), "need", "text").map((n) => n.key)).toEqual(["get_name"]);
+    // a creatively framed ask for the plan's slot still counts for it
+    expect(detectNudges(["Got it.", "So what's one thing I can actually help you knock out this week?"], m.values(), "need", "text").map((n) => n.key)).toEqual(["learn_need"]);
+  });
+  it("Gmail counts only by its own words (or the link card): task talk while Gmail is next is not a nudge", () => {
+    expect(detectNudges(["Want me to draft a cancellation letter you can send yourself?"], m.values(), "gmail", "text")).toEqual([]);
+    expect(detectNudges(["Want me to look through your inbox for the contract?"], m.values(), "gmail", "text").map((n) => n.key)).toEqual(["connect_gmail"]);
+  });
 });
 
 describe("heuristic receptivity (fallback when the model is unavailable)", () => {
@@ -308,6 +318,27 @@ describe("ON MY MIND block", () => {
     // on a call the text-only intention is not listed
     expect(onMyMindBlock(m.values(), "call", 4, T0)).not.toContain("name_agent");
     expect(onMyMindBlock([], "text", 0, T0)).toBe(`${lines[0]}\n(nothing yet)`);
+  });
+  it("with a plan, exactly one line says raise now and every other eligible line says why it waits", () => {
+    const m = fold([...seed(), ev({ key: "followup_landlord", op: "open", actor: "agent", payload: { goal: "ask if the landlord replied" } })]);
+    const block = onMyMindBlock(m.values(), "text", 1, T0, { raise: "get_name", holds: { connect_gmail: "after the need, as the means to it", name_agent: "text only, after the first useful result" } });
+    const lines = block.split("\n");
+    expect(lines[0]).toMatch(/"raise now"/);
+    expect(lines[1]).toBe("- get_name: raise now · learn what to call them");
+    expect(lines[2]).toBe("- learn_need: not now (one ask at a time) · one concrete thing to take off their plate");
+    expect(lines[3]).toBe("- connect_gmail: not now (after the need, as the means to it) · connect Gmail (read-only) as the way to do the task");
+    expect(lines[4]).toBe("- name_agent: not now (text only, after the first useful result) · learn what they'd like to call me");
+    expect(lines[5]).toBe("- followup_landlord: not now (one ask at a time) · ask if the landlord replied");
+    expect(block.match(/raise now/g)).toHaveLength(2);
+    expect(block).not.toContain("eligible now");
+    // the raised item carries the next angle; the ones that wait do not
+    const nudged = fold([...seed(), ev({ key: "connect_gmail", op: "nudge", turn: 2, payload: { approach: "so I can find the membership email?" } }), ev({ key: "connect_gmail", op: "outcome", turn: 2, payload: { receptivity: 8 } })]);
+    expect(onMyMindBlock(nudged.values(), "text", 3, T0 + 60_000, { raise: "connect_gmail", holds: {} })).toMatch(/connect_gmail: raise now · raised 1× .* → 8\/10 · try a different angle: /);
+    expect(onMyMindBlock(nudged.values(), "text", 3, T0 + 60_000, { raise: "get_name", holds: {} })).not.toContain("try a different angle");
+    // the plan may raise a snoozed item on purpose (the need, with nothing to do without one): the block says so instead of contradicting it
+    const needSnoozed = fold([...seed(), ev({ key: "learn_need", op: "nudge", turn: 1, payload: { approach: "one thing off your plate?" } }), ev({ key: "learn_need", op: "outcome", turn: 1, payload: { receptivity: 3, note: "just said hm" } })]);
+    const forced = onMyMindBlock(needSnoozed.values(), "text", 2, T0 + 60_000, { raise: "learn_need", holds: {} });
+    expect(forced.split("\n")[1]).toMatch(/^- learn_need: raise now \(snoozed, 1 more turn, but nothing to do without it: new angle\) · raised 1× .* → 3\/10 "just said hm" · try a different angle: /);
   });
   it("shows a snooze in turns and wall-clock terms and never exceeds the cap", () => {
     const m = fold([...seed(), ev({ key: "connect_gmail", op: "nudge", turn: 2 }), ev({ key: "connect_gmail", op: "outcome", turn: 2, payload: { receptivity: 1, note: "no" } })]);

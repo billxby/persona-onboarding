@@ -260,3 +260,65 @@ sender in the recipient's Contacts. Product copy in the JSON is a draft.
   `hero.eyebrow`, `wristband.gallery`, `wristband.colors`. The native scaffold's bundled copy was refreshed.
 - `devIndicators: false` so Next's dev badge no longer floats inside the phone or the embedded clip.
 
+
+## 12. The mind drives the asks (fourth commit, 2026-09-26)
+
+Audit of DESIGN §13b after the intentions ledger landed: the four core asks were recorded and scored correctly, but
+the model could still get stuck helping without ever surfacing them, because two views of "what to ask" disagreed.
+
+- `next_best_ask` and `ON MY MIND` were computed separately. The block said "eligible now" for up to three items while
+  the ask said "none — help with the need"; the policy told the model to obey both. Now `askPlan()` in
+  `src/lib/server/state.ts` makes one decision per turn and both blocks render it: one line reads "raise now" (with
+  the next untried angle), every other eligible line says why it waits (`one ask at a time`, `after the need, as the
+  means to it`, `after the first useful result`, `Gmail link pending`). When nothing is left to collect, the top
+  eligible ad-hoc intention becomes the pick and the hint names it.
+- Three misses (`attempts >= 3`) retired a slot for good and STATE said "(skipped)", contradicting "sticky, never
+  dropped". With a mind the counters no longer gate anything: a skip is scored 1/10 (12 turns + 2 h, doubled per
+  nudge), STATE says "(empty, go with 'friend' for now)" while it rests, and it comes back from a new angle.
+- Main mode held the name behind `value_moment_at || gmail != none` and the agent's name behind `value_moment_at`,
+  which only the email tools set: a no-Gmail session never reached either. Now: need (if forgotten) → Gmail, only
+  once a need is known → name, no value gate → agent name after value or turn `AGENT_NAME_FLOOR_TURN` (6).
+- `forget(user, user_name|need|agent_name)` emptied the slot but left the intention `done`, so it was never asked
+  again. It now reopens the intention. `intention(open)` on a done/dropped key reopens it too (the fold needs a
+  `reopen`, which the tool schema did not expose).
+- `graduate("skip all")` left all four asks eligible, so the agent would ask the name right after "skip everything".
+  A skip-style graduation now scores every still-missing ask 1/10.
+- `detectNudges` attributed any question to Gmail while Gmail was next (inflating its nudge count and doubling its
+  backoff); Gmail now counts only by its own words or the link card. It also credited a plain name question to the
+  need when the plan had said "need" (seen live: `learn_need` got a nudge for "What should I call you, by the way?"
+  and was then snoozed with no task on file); a question that matches another built-in's cue is never credited to
+  the plan's slot. The need cue gained "one thing I can…" and "help you knock out/tackle/…" phrasings.
+- The output guard built its own STATE block without the mind (found in the first live run: the writer's draft
+  followed the plan and asked the need while the name rested; Haiku rejected it with "skips collecting the user's
+  name … next_best_ask set to user_name" and the rewrite re-asked the name). The guard now receives the mind, renders
+  the same STATE + ON MY MIND the writer saw, and its prompt says not asking is never a problem. A deterministic local
+  check rejects any question about an ask whose intention is resting (snoozed or unanswered) unless the plan itself
+  picked it. `tests/unit/guard.test.ts` covers it.
+- The need is never snoozed away in onboarding: with no need on file and nothing else to ask, anything short of a
+  clear no (ignored 3–4, noncommittal 5–6, warm but no task 7–8) raises it again from a new angle (three options
+  after two misses; for a noncommittal reply one light menu, and the model leaves it if they plainly said later),
+  while a no (0–2) is respected (hint: help with what they raise, offer something concrete, or graduate). ON MY MIND
+  shows such a forced raise as "raise now (snoozed …, but nothing to do without it: new angle)" instead of
+  contradicting the ask. The scorer reads a bare "ok" or "hm" anywhere from 3 to 7 between runs, which is why the
+  rule spans the bands rather than one.
+- `/db` "On my mind" marks the current pick "raise now" (other eligible rows read "eligible, waits"), matching the block.
+- Prompts: `persona.md` says helping and asking are not either/or and to answer "what do you still need from me?"
+  from ON MY MIND; the policies say "raise now" instead of "eligible"; "three misses → skip silently" became "rest it,
+  it stays on your mind". Onboarding lost two redundant lines (the duplicated three-options rule, the verbatim
+  server-sent opener) to stay under the 1,500-token budget. `PROMPT_VERSION` 2026-09-26.3.
+
+Verified: typecheck, lint, 139 unit tests (new: plan coherence, no retirement with a mind, Gmail after need,
+main-mode order and the turn floor, ad-hoc pick, nudge attribution, guard pacing), and four live simulator runs on
+Claude (`claude-sonnet-5` + `claude-haiku-4-5-20251001`):
+- `skip_all`: "skip" → `graduate` → all four asks scored 1/10, nothing re-asked ("I'm here whenever you want
+  something done").
+- `silent` ×3: "." → name asked; "hm" → name scored 3–5/10 and rested ("we can skip the name for now, I'll just call
+  you friend"), the need asked instead; "ok" → the need again with categories; then name + need in one message → Gmail
+  card. The first of these runs is where the guard bug above was caught (it forced a name re-ask); the fixed runs show
+  no re-ask and one nudge per intention.
+- `already_told`: name + need in one breath → Gmail card → demo inbox → value at 33 s → `name_agent` became the pick
+  only then, was asked ("what do you want to call me?"), scored 9 on a mis-answer, came back from the second angle
+  ("want to give me a name? Persona's fine too"), settled to Persona with the contact card; the model opened its own
+  `followup_peak_fitness` intention for "remind me in a week". Four guard regenerations, all from pre-existing rules
+  (two questions in one reply; a draft written inline as bubbles instead of `draft_reply`, cut mid-sentence; offering
+  Gmail when it was already connected).

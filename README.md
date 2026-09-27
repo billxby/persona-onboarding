@@ -54,11 +54,13 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
    Any other first text goes to the model, and the server adds the card after its first reply. Two exits:
    type, or ring the phone.
 2. Every user turn goes through slot extraction via tools, whatever was asked. A stated need flips
-   `mode` to `main` immediately: the task starts and the missing slots become soft, once-per-session nudges.
+   `mode` to `main` immediately: the task starts and the missing slots become soft nudges, paced by how
+   the user took the last one (the agent's mind, below).
 3. Ask order is `user_name → need → gmail`; in text, `agent_name` after the first useful result. One
    question per turn, never a filled slot, never the same wording twice (the last five questions are in
-   the prompt and the guard rejects repeats). Two misses on a slot → offer choices; three → skip
-   ("friend" for the name, "Persona" for the agent).
+   the prompt and the guard rejects repeats). Two misses on a slot → offer choices; three → rest it behind
+   a placeholder ("friend" for the name, "Persona" for the agent); it stays on the agent's mind and comes
+   back much later from a new angle. The need is the exception: with no task on file it is asked again.
 4. Gmail is only ever asked as the way to do the stated task. `request_gmail_connect` drops a link
    card into the thread; the popup connects a real inbox or the demo one. The value moment follows:
    "You're connected as …, 14 unread in two days, one from Peak Fitness Club …, want me to draft that?"
@@ -141,10 +143,12 @@ timed-out link or a "skip" score without a model call. The score sets a backoff 
 with a wall-clock floor for cold reactions, doubled on every extra nudge, so a 1/10 on Gmail means the
 ask comes back much later and from a different angle (the block suggests the next untried one), never
 in the next breath. The four core asks are sticky: never dropped, only backed off, because connecting
-Gmail is what the product is for. `next_best_ask` respects the schedule, the prompt carries an
-`ON MY MIND` block after `WHAT I KNOW`, and `/db` shows each intention's status, receptivity history,
-times raised and when it is eligible again. Replay is deterministic and fuzz-tested like the beliefs
-ledger.
+Gmail is what the product is for. `next_best_ask` and the `ON MY MIND` block after `WHAT I KNOW` are one
+decision: the block marks the pick "raise now" and says why every other eligible item waits, so helping
+with the task never quietly crowds the asks out and the asks never crowd out the help. Three misses rest
+an ask behind a placeholder instead of retiring it, `forget` reopens it, "skip everything" backs every
+open ask off, and `/db` shows each intention's status, receptivity history, times raised and when it is
+eligible again. Replay is deterministic and fuzz-tested like the beliefs ledger.
 
 ### Voice
 
@@ -236,7 +240,7 @@ swipe for timestamps. There are deliberately no buttons, quick replies or forms 
 ```bash
 npm run typecheck
 npm run lint
-npm test                                        # 125 unit tests: ledger + intentions determinism fuzz, validators,
+npm test                                        # 139 unit tests: ledger + intentions determinism fuzz, ask plan + guard pacing, validators,
                                                 # state machine, prompt budget, text splitting, gmail mock, mirror, call
 npm run simulate -- --persona troll --turns 8   # hostile-user simulator (needs the dev server)
 npm run simulate -- --persona all --turns 6 --tag

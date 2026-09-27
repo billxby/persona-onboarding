@@ -2,14 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { onMyMindBlock } from "@/lib/memory/intentions";
 import type { Belief, ServerChannel, SessionRow } from "@/lib/shared/types";
-import { stateBlock, turnOf, type MindView } from "./state";
+import { askPlan, mindPlan, stateBlock, turnOf, type MindView } from "./state";
 
 /**
- * Prompt composition (DESIGN.md §9): persona + policy[mode] + channel[channel] + STATE + WHAT I KNOW.
+ * Prompt composition (DESIGN.md §9): persona + policy[mode] + channel[channel] + STATE + WHAT I KNOW + ON MY MIND.
  * Static parts first, dynamic parts last, so the static prefix can be cached by the provider.
  * Files live in prompts/*.md and are read from disk (cached in production).
  */
-export const PROMPT_VERSION = "2026-09-26.2";
+export const PROMPT_VERSION = "2026-09-26.3";
 
 /** Rough budget check: ~4 chars per token. The whole prompt must stay under 1,500 tokens. */
 export const PROMPT_TOKEN_BUDGET = 1500;
@@ -69,11 +69,13 @@ export function staticPrompt(mode: SessionRow["mode"], channel: ServerChannel): 
  * `static` is identical for every turn of the same mode/channel (cache breakpoint goes here);
  * `dynamic` is the STATE block + WHAT I KNOW + ON MY MIND, rebuilt every turn.
  * `mind` (the intentions projection) is optional: without it the ON MY MIND block is omitted
- * and next_best_ask falls back to the attempts counters.
+ * and next_best_ask falls back to the attempts counters. With it, the ask plan is computed once
+ * and drives both STATE.next_best_ask and the ON MY MIND block, so the two never disagree.
  */
 export function buildPromptParts(session: SessionRow, channel: ServerChannel, beliefs: Belief[], mind?: MindView, now: number = Date.now()): { static: string; dynamic: string } {
-  const blocks = [stateBlock(session, channel, mind, now), whatIKnowBlock(beliefs)];
-  if (mind) blocks.push(onMyMindBlock(mind, channel, turnOf(session), now));
+  const plan = askPlan(session, channel, mind, now);
+  const blocks = [stateBlock(session, channel, mind, now, plan), whatIKnowBlock(beliefs)];
+  if (mind) blocks.push(onMyMindBlock(mind, channel, turnOf(session), now, mindPlan(plan)));
   return {
     static: staticPrompt(session.mode, channel),
     dynamic: blocks.join("\n\n"),

@@ -145,11 +145,16 @@ describe("buildPrompt", () => {
       }
     }
     const text = buildPrompt(session({ turn: 6 }), "text", beliefs, mind, Date.parse(now) + 60_000);
-    expect(text).toContain("- connect_gmail: eligible now · raised 1× (last: If you connect Gmail I can find the membership email. Want me to?) → 3/10 \"changed the subject to the dentist\" · try a different angle:");
+    // gmail is pending in the fixture: no slot is collected this turn, so the one eligible follow-up is the thing to raise,
+    // and every slot ask the ledger calls eligible says why it waits. The block and next_best_ask are the same decision.
+    expect(text).toContain("- followup_landlord: raise now · ask whether the landlord replied about the deposit");
     expect(text).toContain("- name_agent: asked, waiting for their reaction");
-    expect(text).toContain("- followup_landlord: eligible now · ask whether the landlord replied about the deposit");
-    // gmail is pending in the fixture, so next_best_ask waits; the on-hold note names the asked intention only when it is blocking
+    expect(text).toContain("- connect_gmail: not now (Gmail link pending) · raised 1× (last: If you connect Gmail I can find the membership email. Want me to?) → 3/10 \"changed the subject to the dentist\"");
+    expect(text).not.toMatch(/^- \w+: eligible now/m);
+    const block = text.slice(text.lastIndexOf("\nON MY MIND"));
+    expect(block.match(/raise now/g)).toHaveLength(2); // the header's rule and the one line
     expect(text).toContain("next_best_ask: none — Gmail connect is pending");
+    expect(text).toContain("On your mind: followup_landlord is eligible now; raise it if it fits.");
   });
 
   it("puts static parts first and the STATE + WHAT I KNOW blocks last", () => {

@@ -1,6 +1,6 @@
 import { generateText } from "ai";
-import { builtinForSlot } from "@/lib/memory/intentions";
-import { completeIntention, deferIntention, dropIntention, mindFor, openIntention, recordNudge, recordOutcome, settleIfOpen } from "@/lib/memory/mind";
+import { BUILTIN_INTENTIONS, builtinForSlot } from "@/lib/memory/intentions";
+import { completeIntention, deferIntention, dropIntention, mindFor, openIntention, recordNudge, recordOutcome, reopenIntention, settleIfOpen } from "@/lib/memory/mind";
 import { appendMemoryEvent, assertFact, explainBelief, projectBeliefs, retractFact } from "@/lib/memory/store";
 import { gmailFor } from "@/lib/server/gmail/client";
 import { markGmail } from "@/lib/server/gmail/oauth";
@@ -370,6 +370,10 @@ const forget: Handler = async (ctx, input, effects) => {
   if (subject === "user" && (predicate === "user_name" || predicate === "need" || predicate === "agent_name")) {
     session = await patchSession(session.id, (s) => ({ [predicate]: null, confirmed: { ...(s.confirmed ?? {}), [predicate]: false } }) as Partial<SessionRow>);
     effects.instructions_changed = true;
+    // the slot is empty again, so the ask is back on the mind (fresh: no backoff, the old angles still on record)
+    const b = builtinForSlot(predicate);
+    if (b) await quietly("reopen", reopenIntention(session.id, { key: b.key, reason: "user asked to forget it", turn: turnInProgress(session), actor: "user", evidence_ref: `tool:forget:${ctx.channel}` }));
+    return { session, ok: true, note: `forgot ${subject}.${predicate}; it is back on my mind to ask again, later and lightly` };
   }
   return { session, ok: true, note: `forgot ${subject}.${predicate}` };
 };
@@ -395,6 +399,11 @@ const intention: Handler = async (ctx, input) => {
       const goal = typeof input.goal === "string" ? input.goal.trim() : "";
       if (!goal && !current) return { session, ok: false, error: "open needs a goal", ask_again: true };
       if (current && (current.status === "open" || current.status === "asked")) return { session, ok: true, note: `already on my mind (${current.status})` };
+      if (current) {
+        // done or dropped: `open` means "back on my mind" (the fold only moves a settled key on reopen)
+        await reopenIntention(session.id, { ...base, reason: goal ? `reopened: ${goal}` : "reopened" });
+        return { session, ok: true, note: "back on my mind" };
+      }
       await openIntention(session.id, { ...base, goal: goal || undefined, sticky: false, priority: 5 });
       return { session, ok: true, note: "on my mind" };
     }
@@ -437,6 +446,14 @@ const graduate: Handler = async (ctx, input, effects) => {
   if (session.phase === "graduated") return { session, ok: true, note: "already graduated; just help" };
   session = await patchSession(session.id, () => ({ mode: "main", phase: "graduated", graduated_at: nowIso() }));
   await insertEvent(session.id, "graduated", { reason, channel: ctx.channel, with_defaults: !session.need || !session.user_name });
+  if (skipAll) {
+    // "skip everything" is a no to every open ask, not just the one on the table: each backs off hard and stays on the mind
+    const missing = (slot: SlotName) => (slot === "gmail" ? session.gmail_status !== "connected" : !session[slot as Exclude<SlotName, "gmail">]);
+    for (const b of BUILTIN_INTENTIONS) {
+      if (!missing(b.slot)) continue;
+      await quietly(`skip-all outcome ${b.key}`, recordOutcome(session.id, { key: b.key, receptivity: 1, signal: "declined", note: "asked to skip onboarding", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:graduate:${ctx.channel}` }));
+    }
+  }
   const gmail =
     session.gmail_status === "connected" ? `connected (${session.gmail_email ?? "read-only"})` : session.gmail_status === "declined" ? "not connected (your call)" : session.gmail_status === "pending" ? "connect link is in the chat" : "not connected";
   const url = `${env.APP_URL}/summary/${session.id}`;
@@ -457,7 +474,11 @@ const graduate: Handler = async (ctx, input, effects) => {
   effects.messages.push(card);
   effects.graduated = true;
   effects.instructions_changed = true;
-  return { session, ok: true, note: ctx.channel === "text" && !session.agent_name ? "graduated; you may ask once what to call you" : "graduated; keep helping" };
+  return {
+    session,
+    ok: true,
+    note: skipAll ? "graduated with defaults; no asks for a while, just help (they come back later, lightly)" : ctx.channel === "text" && !session.agent_name ? "graduated; ask what to call you when ON MY MIND says raise now" : "graduated; keep helping",
+  };
 };
 
 const switchChannel: Handler = async (ctx, input, effects) => {
