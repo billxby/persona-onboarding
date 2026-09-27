@@ -330,7 +330,7 @@ describe("ON MY MIND block", () => {
     expect(lines[0]).toMatch(/^ON MY MIND/);
     // asked first (short, and it stops a re-ask), then eligible by priority, then snoozed
     expect(lines[1]).toMatch(/^- name_agent: asked, waiting for their reaction/);
-    expect(lines[2]).toMatch(/^- learn_need: eligible now · one concrete thing/);
+    expect(lines[2]).toMatch(/^- learn_need: eligible now · the task they want handled/);
     expect(lines[3]).toBe("- offer_call: eligible now · offer one quick call to set up the rest");
     expect(lines[4]).toMatch(/^- connect_gmail: eligible now · raised 1× \(last: so I can find the membership email\?\) → 3\/10 "changed the subject" · try a different angle: /);
     expect(lines[5]).toMatch(/^- done: get_name · dropped, never again: followup_landlord \(0\/10\)$/);
@@ -345,7 +345,7 @@ describe("ON MY MIND block", () => {
     const lines = block.split("\n");
     expect(lines[0]).toMatch(/"raise now"/);
     expect(lines[1]).toBe("- get_name: raise now · learn what to call them");
-    expect(lines[2]).toBe("- learn_need: not now (one ask at a time) · one concrete thing to take off their plate");
+    expect(lines[2]).toBe("- learn_need: not now (one ask at a time) · the task they want handled this week");
     expect(lines[3]).toBe("- offer_call: not now (after the need, as the means to it) · offer one quick call to set up the rest");
     expect(lines[4]).toBe("- connect_gmail: not now (after the need, as the means to it) · connect Gmail (read-only) as the way to do the task");
     // priority 5 twice (name_agent, the ad-hoc follow-up): ties break by key

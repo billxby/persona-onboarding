@@ -146,7 +146,7 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
         hint:
           asks(s, "user_name") >= 2
             ? "Two misses on the name: offer a choice ('a first name, or I just go with friend?'), then move on."
-            : `Ask what to call them, once, and use the name in your next sentence.${receptivityNote(gName.rec)}`,
+            : `Get their name, once; from then on use it.${receptivityNote(gName.rec)}`,
       });
     }
     if (needMissing) {
@@ -156,7 +156,7 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
         hint:
           asks(s, "need") >= 2
             ? "Two misses on the need: offer three concrete options (inbox cleanup, cancelling subscriptions, booking an appointment) and ask which."
-            : `Ask for one thing to take off their plate this week. Paraphrase it back when they answer.${receptivityNote(gNeed.rec)}`,
+            : `Get the task they want handled this week; when it comes, a few of their words back, then start.${receptivityNote(gNeed.rec)}`,
       });
     }
     // the need is known: one call offer before Gmail (text only, once)
@@ -173,7 +173,7 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
       // No need, and nothing to do without one. The need is never skipped (DESIGN §6), so a snooze on it only shapes the framing:
       // let the question pass (3–4), noncommittal (5–6) or warm but no task named (7–8) → ask again from a new angle; a clear no → respect it.
       const r = gNeed.rec.receptivity;
-      if (gNeed.rec.status === "asked") return finish({ slot: null, hint: "You just asked what to take off their plate; wait for the answer and help with anything they said meanwhile." });
+      if (gNeed.rec.status === "asked") return finish({ slot: null, hint: "The task ask is out; wait for the answer and help with anything else they said." });
       const band = r === null ? null : receptivityBand(r);
       if (band !== null && band >= 2) {
         const menu = "three concrete options (inbox cleanup, cancelling a subscription, booking an appointment)";
@@ -184,7 +184,7 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
             : `Still no need and nothing to do without one: ${band === 2 ? `they let the question pass (${r}/10)` : `they were open (${r}/10) but named no task`}, so bridge back and ask once more, concretely, from a new angle${options}.`;
         return finish({ slot: "need", hint: `${hint}${receptivityNote(gNeed.rec)}` });
       }
-      return finish({ slot: null, hint: `No need yet and they passed on stating one (${r === null ? "no score" : `${r}/10`}; ${gNeed.why}). Don't ask now: help with whatever they raise, offer one concrete thing you could start on, or graduate if they want to get going.` });
+      return finish({ slot: null, hint: `No need yet and they passed on stating one (${r === null ? "no score" : `${r}/10`}; ${gNeed.why}). Don't ask now: help with whatever they raise, offer one thing you could start on, or graduate if they want to get going.` });
     }
     return finish({ slot: null, hint: `Deliver the value moment now; call graduate once the task is in motion.${onHold()}` });
   }
@@ -200,7 +200,7 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
     if (gmailSoft) hold("gmail", HOLD_AFTER_NEED);
     if (nameSoft) hold("user_name", HOLD_ONE_AT_A_TIME);
     if (agentSoft) hold("agent_name", HOLD_ONE_AT_A_TIME);
-    return finish({ slot: "need", hint: `No need on file: ask for one concrete thing to take off their plate, then act on it.${receptivityNote(gNeed.rec)}` });
+    return finish({ slot: "need", hint: `No task on file: ask what they want handled this week, then act on it.${receptivityNote(gNeed.rec)}` });
   }
   // right after the need, before Gmail: the one call offer (DESIGN §7)
   if (offerNow) {

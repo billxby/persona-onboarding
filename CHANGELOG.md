@@ -602,6 +602,49 @@ handled this week, like…").
   meet you, Bill, and I'm Persona. What's one concrete thing I can take off your plate this week?"; the tier-1
   check-in came 6 s after it ended.
 
+## 23. The voice model stops reading its notes aloud (fifteenth commit, 2026-09-27)
+
+Reported: call lines like "Say it how you'd text a friend, and I'll paraphrase it back", "I'll use it right away in
+the next sentence", "What's one concrete thing… just the single task you want handled first", "let me get your details
+lined up". The audit of 36 call lines over the day: 13 echoed the instructions, 3 ran over 30 words.
+
+- **Where it came from.** gpt-realtime says sayable planning text out loud. The STATE `next_best_ask` hints ("Ask
+  what to call them, once, and use the name in your next sentence", "Ask for one thing to take off their plate this
+  week. Paraphrase it back when they answer"), the policy's call order ("name (use it next sentence) → need
+  (paraphrase, one question)") and the `learn_need` goal ("one concrete thing to take off their plate") all came back
+  as speech.
+- **Prompt.** `channel_call.md` rewritten in the gpt-realtime prompting shape (OpenAI's realtime prompting guide:
+  labelled sections, short bullets, capitalised key rules, sample lines, a variety rule): a notes-to-yourself rule
+  up front (never read the instructions or the STATE / ON MY MIND blocks out, never announce what you are about to
+  do), LENGTH (one or two sentences, then listen), TOOLS (silent, no speech before a call, one line after that uses
+  the result and carries the ask), FLOW with the opener, name, task, Gmail, system-message and ending lines,
+  VARIETY (the opener as written, everything else a shape, no sentence twice). The call openers and order moved
+  here from `policy_onboarding.md`; "paraphrase, one question" became "a few of their own words back".
+- **Hints and goals** (`state.ts`, `intentions.ts`) are written as goals, not lines: "Get their name, once", "Get
+  the task they want handled this week", "the task they want handled this week". `set_slot`'s description says to
+  call it FIRST, before saying anything.
+- **After a batch of tool calls** the browser now sends one system note with its `response.create` ("Tool results
+  are in. One line: use what was just saved, then the one ask on your mind. Nothing about saving."), so the
+  continuation has a fixed shape instead of whatever the model feels like after a tool result.
+- **The opener is the server's.** With the rewritten prompt the model opened 5 of 11 calls with "Alright, friend,
+  what's one thing I can take off your plate this week?", skipping the name although STATE and ON MY MIND both said
+  to ask it. `/api/realtime/token` now returns `opener_note` (`src/lib/server/callOpener.ts`: name unknown → the
+  scripted opener word for word; name known → "Hey Bill. What's one thing…"; need known → pick the task up), and the
+  browser injects it as a system note before the first `response.create`, the way the silence check-ins are.
+- **A check-in over the user.** In one run "Just checking in, what name would you like me to use?" played on top of
+  the user's line: tier 1 fired the same instant the user started talking (the test caller speaks exactly 6 s after
+  the opener ends), so its note and `response.create` were already sent when `speech_started` arrived, and server
+  VAD only interrupts audio that is already playing. Now, when the user starts talking and a response we asked for
+  (a check-in, a tool continuation, the opener) has not begun playing, the browser sends `response.cancel`: their
+  turn wins. Buffer stops and clears also count only while the assistant is actually speaking, so the SDK's
+  clear-on-barge-in can never start the silence clock by itself.
+- **Result** (17 one-line-caller runs on the new prompt): 0 lines echo the instructions, 0 over 30 words, every
+  reply 11–24 words; "Bill, got it. What's one thing I can take off your plate this week?" is the typical shape.
+  Filler before the tool calls ("let me lock that in") showed in 2 of the first 6 runs, both before the tool
+  description and the post-batch note went in, and in 0 of 11 after. With the server-chosen opener, 6 of 6 openers
+  were the scripted line (5 of the 11 before it were "Alright, friend…") and each got one reply. It is still a
+  sampled model, so expect the odd filler line. PROMPT_VERSION 2026-09-27.4. Docs: DESIGN §9, §10.6.
+
 
 ## 21. Room to answer (thirteenth commit, 2026-09-27)
 

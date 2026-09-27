@@ -4,6 +4,7 @@ import { env } from "@/lib/server/env";
 import { activeBeliefs, detectDrop } from "@/lib/server/messages";
 import { buildPrompt, PROMPT_VERSION } from "@/lib/server/prompt";
 import { getSession, isUuid, patchSession } from "@/lib/server/session";
+import { callOpenerNote } from "@/lib/server/callOpener";
 import { toolJsonSchemas } from "@/lib/server/tools/definitions";
 
 export const maxDuration = 30;
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
     tools,
     transcribe_model,
     turn_detection: TURN_DETECTION,
+    opener_note: callOpenerNote(session),
   };
   return Response.json(res);
 }

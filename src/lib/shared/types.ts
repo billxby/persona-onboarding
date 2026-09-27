@@ -448,6 +448,8 @@ export interface RealtimeTokenResponse {
   instructions: string;
   /** JSON-schema function tool definitions for the Realtime session */
   tools: unknown[];
+  /** the server's choice of first line, injected as a system note before the first response */
+  opener_note?: string;
 }
 
 export interface InstructionsResponse {

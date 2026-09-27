@@ -69,7 +69,7 @@ export const BUILTIN_INTENTIONS: BuiltinIntention[] = [
   {
     key: "learn_need",
     slot: "need",
-    goal: "one concrete thing to take off their plate",
+    goal: "the task they want handled this week",
     priority: 2,
     sticky: true,
     channels: BOTH,

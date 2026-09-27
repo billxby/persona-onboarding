@@ -60,6 +60,8 @@ const DRAIN_QUIET_MS = 250;
 const DRAIN_MAX_MS = 1_500;
 const DRAIN_NO_METER_MS = 300;
 const METER_INTERVAL_MS = 66;
+/** a response we asked for (a check-in, a tool continuation) that has not started playing when the user starts talking is dropped */
+const INJECTED_RESPONSE_CANCEL_MS = 6_000;
 
 const TIER_NOTES: Record<1 | 2 | 3, string> = {
   1: "The user has been silent for a few seconds. Check in softly in one short sentence.",
@@ -97,7 +99,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   private readonly pacer: CaptionPacer;
   private readonly ender: CallEnder;
   /** one spoken reply per batch of tool calls, not one per tool */
-  private readonly tools = new ToolBatch(() => this.sendEvent({ type: "response.create" }));
+  private readonly tools = new ToolBatch(() => this.continueAfterTools());
 
   private alive = false;
   private ending = false;
@@ -110,6 +112,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   private drainingSince: number | null = null;
   private quietSince: number | null = null;
   private meterActive = false;
+  /** when we last asked for a response ourselves (response.create); cleared once it starts playing */
+  private injectedResponseAt: number | null = null;
 
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private levelTimer: ReturnType<typeof setInterval> | null = null;
@@ -224,7 +228,10 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     }, HEARTBEAT_MS);
     this.silence.start();
     window.addEventListener("pagehide", this.onPageHide);
-    // the bot opens the call (server_vad only responds to user speech)
+    // the bot opens the call (server_vad only responds to user speech), with the line the server chose from what is known
+    if (token.opener_note) {
+      this.sendEvent({ type: "conversation.item.create", item: { type: "message", role: "system", content: [{ type: "input_text", text: token.opener_note }] } });
+    }
     this.sendEvent({ type: "response.create" });
   }
 
@@ -305,6 +312,19 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     return { result: res.result, endCall };
   }
 
+  /**
+   * The whole batch of tool calls is back: one response, shaped by a one-line note (the saved value,
+   * then the next ask, nothing about saving), so the continuation never narrates the tool work.
+   */
+  private continueAfterTools() {
+    if (!this.alive || !this.session) return;
+    this.sendEvent({
+      type: "conversation.item.create",
+      item: { type: "message", role: "system", content: [{ type: "input_text", text: "Tool results are in. One line: use what was just saved, then the one ask on your mind. Nothing about saving." }] },
+    });
+    this.sendEvent({ type: "response.create" });
+  }
+
   private applyInstructions(instructions: string) {
     this.sendEvent({ type: "session.update", session: { type: "realtime", instructions } });
   }
@@ -312,6 +332,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   private sendEvent(event: { type: string; [k: string]: unknown }) {
     try {
       this.session?.transport.sendEvent(event);
+      if (event.type === "response.create") this.injectedResponseAt = performance.now();
     } catch (e) {
       console.warn("[realtime] sendEvent failed", event.type, e);
     }
@@ -342,6 +363,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
         this.speechStoppedAt = null;
         this.silence.onUserSpeechStart();
         this.tools.userSpoke();
+        this.cancelPendingResponse();
         // whatever sounded like a goodbye, the user is talking: it wasn't one
         this.clearGoodbyeTimer();
         this.openUserCaption();
@@ -380,6 +402,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   /** The server began streaming a response's audio. Back-to-back responses share one buffer. */
   private onAudioStarted() {
     this.clearDrain();
+    this.injectedResponseAt = null;
     const wasSpeaking = this.assistantSpeaking;
     this.assistantSpeaking = true;
     if (this.speechStoppedAt != null) {
@@ -399,11 +422,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
    * so the end is called when the remote track has actually gone quiet (or shortly after, without a meter).
    */
   private onAudioBufferStopped() {
-    if (this.drainingSince != null) return;
-    if (!this.assistantSpeaking) {
-      this.onAudioEnded();
-      return;
-    }
+    // a stop with nothing playing (the SDK clears the buffer on every barge-in) is not the end of a line
+    if (this.drainingSince != null || !this.assistantSpeaking) return;
     this.drainingSince = performance.now();
     this.quietSince = null;
     this.drainTimer = setTimeout(() => this.onAudioEnded(), this.meterActive ? DRAIN_MAX_MS : DRAIN_NO_METER_MS);
@@ -412,6 +432,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   /** The assistant has finished talking, for real. The silence clock starts here, and a requested end proceeds. */
   private onAudioEnded() {
     this.clearDrain();
+    if (!this.assistantSpeaking) return;
     this.assistantSpeaking = false;
     this.handlers?.onRemoteLevel(0);
     this.pacer.audioEnded();
@@ -422,6 +443,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   /** The user barged in (server VAD cleared the buffer): the rest of the response was never heard. */
   private onAudioInterrupted() {
     this.clearDrain();
+    if (!this.assistantSpeaking) return;
     this.assistantSpeaking = false;
     this.handlers?.onRemoteLevel(0);
     this.pacer.audioInterrupted();
@@ -543,6 +565,16 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     if (!this.alive) return;
     this.clearGoodbyeTimer();
     this.ender.request(this.silenceEnding ? "silence" : reason, { awaitAudioMs });
+  }
+
+  /**
+   * The user started talking before a response we asked for (a check-in, a tool continuation) began
+   * playing: drop it, their turn wins. Server VAD only interrupts audio that is already playing.
+   */
+  private cancelPendingResponse() {
+    if (this.injectedResponseAt == null || this.assistantSpeaking) return;
+    if (performance.now() - this.injectedResponseAt < INJECTED_RESPONSE_CANCEL_MS) this.sendEvent({ type: "response.cancel" });
+    this.injectedResponseAt = null;
   }
 
   private onSilenceTier(tier: 1 | 2 | 3) {

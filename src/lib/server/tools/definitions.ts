@@ -57,7 +57,7 @@ const RESULT = "Returns ok plus state and next_best_ask; read them before your n
 
 export const TOOL_DEFS: Record<ToolName, ToolDef> = {
   set_slot: {
-    description: `Save something the user just told you: their name (user_name), the one thing they want done (need), a verbal no to Gmail (gmail: "declined"), or what to call you (agent_name, text only). Call it the moment a value appears in what they said, even if you asked about something else. value "skip" skips a slot they refuse. ${RESULT} On ok:false read error and ask again differently.`,
+    description: `Save something the user just told you: their name (user_name), the one thing they want done (need), a verbal no to Gmail (gmail: "declined"), or what to call you (agent_name, text only). Call it the moment a value appears in what they said, even if you asked about something else, and call it FIRST, before saying anything: the confirmation comes after the result. value "skip" skips a slot they refuse. ${RESULT} On ok:false read error and ask again differently.`,
     input: setSlotInput,
     channels: BOTH,
   },
