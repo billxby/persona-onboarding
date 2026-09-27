@@ -373,11 +373,11 @@ export class ServerBrain implements OnboardingBrain {
       if (this.gmailTimer) clearTimeout(this.gmailTimer);
       this.gmailTimer = setTimeout(() => {
         this.gmailTimer = null;
-        if (session.get().slots.gmail.status === "pending") void this.requestReply("gmail_declined", "timeout");
+        if (session.get().slots.gmail.status === "pending") this.declineGmail("timeout");
       }, GMAIL_TIMEOUT_MS);
       // the consent window closed without an answer (the X, not Google's Cancel): a decline, after a short grace for a callback in flight
       this.watchPopup(popup, () => {
-        if (session.get().slots.gmail.status === "pending") void this.requestReply("gmail_declined", "closed");
+        if (session.get().slots.gmail.status === "pending") this.declineGmail("closed");
       });
       return;
     }
@@ -393,6 +393,15 @@ export class ServerBrain implements OnboardingBrain {
   }
 
   private popupTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * We are the ones declaring Gmail declined (timeout, popup closed). The server will flip the status and that flip
+   * comes back through Realtime; stamping the dedupe window here keeps `notifyGmail` from asking for a second turn.
+   */
+  private declineGmail(reason: "timeout" | "closed"): void {
+    this.lastGmailReplyAt = Date.now();
+    void this.requestReply("gmail_declined", reason);
+  }
 
   /** Fires `onClosed` ~1.5 s after the popup is gone (a callback may still be landing); stops itself on teardown. */
   private watchPopup(popup: Window | null, onClosed: () => void): void {

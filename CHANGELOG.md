@@ -575,3 +575,19 @@ as it has barely finished speaking.
   showed the `end_call` ordering problem above (no call-log bubble, no follow-up); after the `run.ts` change a second
   run (`03ee4c4b`) ended on silence at 45.5 s and the thread got the call-log bubble and the `silence_end` reply.
 - Docs: DESIGN §8.9 and §10.6, README "Voice".
+
+
+## 21. Room to answer (thirteenth commit, 2026-09-27)
+
+Seen live: after a call ended the agent asked a question, then two more unprompted turns landed ("No problem, we can
+do that later. Here's the plan…", "All good, no worries about Gmail. Let's just do this directly…"): the Gmail decline
+fired once from the closed consent popup and once more when the status flip came back through Realtime, each with a
+three-bubble plan.
+
+- One decline turn: the browser stamps its own decline (timeout, popup closed) into the same dedupe window
+  `notifyGmail` uses, so the Realtime flip no longer asks for a second turn.
+- Room to answer (DESIGN §11.2): a `gmail_declined` turn never speaks while the thread ends on an unanswered question
+  of ours. The status still flips; a `reply_held` event records it; the next real turn sees it in STATE.
+- Shorter: the decline hint asks for at most two bubbles and one question, not "the steps, what you need from them,
+  the first thing you do now". `channel_text.md`: one to three bubbles, one is often right; once you have asked, stop
+  and wait; never restate a plan you already gave. `PROMPT_VERSION 2026-09-27.3`.

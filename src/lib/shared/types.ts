@@ -143,6 +143,7 @@ export type EventType =
   | "app_clip_demo"
   | "app_clip_answer"
   | "call_offer"
+  | "reply_held"
   | "intention"
   | "receptivity"
   | "error";

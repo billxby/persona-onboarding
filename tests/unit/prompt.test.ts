@@ -91,7 +91,8 @@ describe("prompt files", () => {
     expect(loadPrompt("channel_call")).toMatch(/agent_name is asked in text only, never on a call/);
     const text = loadPrompt("channel_text");
     expect(text).toMatch(/No markdown/);
-    expect(text).toMatch(/two or three short bubbles separated by a blank line/);
+    expect(text).toMatch(/one to three short bubbles separated by a blank line/);
+    expect(text).toMatch(/Once you have asked something, stop and wait/);
   });
 
   it("static prefix lands in the 3,000–4,400 char band for every mode × channel", () => {

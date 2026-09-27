@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clipCaptureFrom, clipClosedHint } from "@/lib/server/clipAnswer";
+import { awaitingAnswer } from "@/lib/server/brain/chat";
 import { inLatestBurst, targetOf } from "@/lib/server/brain/tapback";
 import { APP_CLIP_CARD, APP_CLIP_SUBTITLE_MAX, APP_CLIP_TITLE_MAX, callOfferAnswer, CLIP_SCREENS, CLIP_STEPS, ClipAnswerSchema, clipStateFrom } from "@/lib/shared/clip";
 import type { EventRow, MessageRow, SessionRow } from "@/lib/shared/types";
@@ -145,5 +146,18 @@ describe("tapbacks as answers", () => {
     expect(inLatestBurst(thread, thread[4])).toBe(true);
     expect(inLatestBurst(thread, thread[2])).toBe(false); // the user texted since
     expect(inLatestBurst(thread, thread[3])).toBe(false); // their own bubble
+  });
+});
+
+describe("a system trigger never talks over an unanswered question", () => {
+  const row = (over: Partial<MessageRow>): MessageRow => ({ id: 1, session_id: "s", client_id: null, channel: "text", role: "assistant", kind: "text", content: null, payload: {}, created_at: "2026-09-27T00:00:00Z", ...over });
+  it("awaitingAnswer: true only when our last burst asked something and they have not replied", () => {
+    const asked = [row({ id: 1, role: "user", content: "hey" }), row({ id: 2, content: "Homework it is." }), row({ id: 3, content: "What subject is it in?" })];
+    expect(awaitingAnswer(asked)).toBe(true);
+    expect(awaitingAnswer([...asked, row({ id: 4, role: "user", content: "math" })])).toBe(false);
+    expect(awaitingAnswer([row({ id: 1, role: "user", content: "hey" }), row({ id: 2, content: "On it." })])).toBe(false);
+    // a link card or a call log between does not count as an answer
+    expect(awaitingAnswer([...asked, row({ id: 4, kind: "link_card", content: "http://x/connect" })])).toBe(true);
+    expect(awaitingAnswer([])).toBe(false);
   });
 });

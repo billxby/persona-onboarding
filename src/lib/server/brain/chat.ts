@@ -95,11 +95,11 @@ function triggerHint(trigger: ChatTrigger, reason: string | undefined, session: 
       return `Gmail just connected${session.gmail_email ? ` as ${session.gmail_email}` : ""}. Call recent_emails(3) FIRST, then give one real observation (unread count, who needs a reply) and ask ONE question, e.g. offer to draft the most urgent reply.`;
     case "gmail_declined": {
       const plan = session.need
-        ? `Then deliver ONE concrete plan for "${session.need}" without Gmail: the exact steps you will take or they should, what you need from them (a forwarded email, a date, a name), and the first thing you will do now. No Gmail talk unless they ask.`
-        : "Then ask for the one thing they want done (the need); plan it without Gmail once you have it. No Gmail talk unless they ask.";
-      if (reason === "timeout") return `The Gmail connect timed out. Acknowledge in one line, no guilt. ${plan}`;
+        ? `Then ONE concrete next step for "${session.need}" without Gmail, in at most two short bubbles total, ending in a single question. No Gmail talk unless they ask.`
+        : "Then ask for the one thing they want done, in one short bubble. No Gmail talk unless they ask.";
+      if (reason === "timeout") return `The Gmail connect timed out. One light line, no guilt. ${plan}`;
       if (reason === "closed") return `They closed the Google window without choosing. One light line ("no problem, we can do it later"), no guilt. ${plan}`;
-      return `Gmail was declined on Google's screen. Acknowledge in one line, no guilt. ${plan}`;
+      return `Gmail was declined on Google's screen. One light line, no guilt. ${plan}`;
     }
     case "welcome_back":
       return "The user came back after a while. Greet by name if known, recall the need in a few words, and offer to pick up where you left off. One question max.";
@@ -240,10 +240,19 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
       return;
     }
 
-    if (trigger === "gmail_declined" && session.gmail_status === "pending") {
-      // timeout → failed (no answer); closed the window → declined, read softly; anything else → a decline
-      await markGmail(session_id, reason === "timeout" ? "failed" : "declined", null, reason === "closed" ? { reason: "popup_closed" } : {});
-      session = (await getSession(session_id)) ?? session;
+    if (trigger === "gmail_declined") {
+      if (session.gmail_status === "pending") {
+        // timeout → failed (no answer); closed the window → declined, read softly; anything else → a decline
+        await markGmail(session_id, reason === "timeout" ? "failed" : "declined", null, reason === "closed" ? { reason: "popup_closed" } : {});
+        session = (await getSession(session_id)) ?? session;
+      }
+      // Give them room to answer: if the last thing in the thread is a question of ours they have not replied to,
+      // the decline is recorded in STATE and nothing more is said now; the next turn sees it (DESIGN §11.2).
+      if (awaitingAnswer(await listMessages(session_id, { channel: "text" }))) {
+        await insertEvent(session_id, "reply_held", { trigger, reason: reason ?? null, why: "question outstanding" });
+        await finish();
+        return;
+      }
     }
 
     if (trigger === "user" && (await landOpenerIfHello(session_id, emit))) {
@@ -296,6 +305,17 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
   } finally {
     await releaseReplyLock(session_id);
   }
+}
+
+/** True when the thread ends on a question of ours with no user text after it: the user's turn to speak. */
+export function awaitingAnswer(thread: MessageRow[]): boolean {
+  const rows = thread.filter((m) => m.channel === "text" && m.kind === "text" && (m.role === "user" || m.role === "assistant"));
+  const last = rows[rows.length - 1];
+  if (!last || last.role !== "assistant") return false;
+  // the assistant's last burst: every bubble since the user's last text
+  let i = rows.length - 1;
+  while (i >= 0 && rows[i].role === "assistant") i--;
+  return rows.slice(i + 1).some((m) => questionsIn([m.content ?? ""]).length > 0);
 }
 
 const slotEmpty = (s: SessionRow, slot: SlotName) =>

@@ -265,7 +265,7 @@ session.on("history_updated", (history) => saveTranscriptTurns(sessionId, histor
 ## 11. Text channel
 
 1. `POST /api/chat`: `streamText` with `anthropic("claude-sonnet-5")`, system = `buildPrompt(session, "text")`, last 12 turns + `summary`, tools from section 8. `export const maxDuration = 60`.
-2. Debounce: wait 1.5 s after the user's last bubble before responding.
+2. Debounce: wait 1.5 s after the user's last bubble before responding. Room to answer: once the assistant has asked something, no system-triggered reply (a Gmail decline or timeout) speaks before the user does; the state change is recorded (`reply_held` event) and the next turn sees it. Replies are one to three bubbles, one when one will do.
 3. Reply as two or three short bubbles with 400 to 900 ms typing pauses; render a typing indicator.
 4. Output guard: Haiku with structured output compares any name, email or need asserted in the reply against active beliefs; on mismatch regenerate once.
 5. Implicit rename: if a user message addresses the bot by a name ("hey Jarvis"), call `set_slot("agent_name", ...)`.
