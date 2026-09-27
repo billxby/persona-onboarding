@@ -266,3 +266,8 @@ body {
 [data-theme="dark"] .clip-thread {
   --imsg-gray: rgba(255, 255, 255, 0.1);
 }
+/* the mockups' bubbles are a little smaller than the real thread's, so three fit above the button */
+.clip-thread .bubble {
+  font-size: 15px;
+  padding: 6px 11px;
+}

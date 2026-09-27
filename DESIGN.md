@@ -499,11 +499,14 @@ headline per screen (Instrument Serif via `next/font`), system text for everythi
    name, title "Persona", subtitle "Your personal assistant, in Messages", verb Open, header image
    `/clip/card-header.svg`). The opener sends the card in the first exchange; the model sends it when asked what
    Persona can do or to set things up; once after graduation.
-7. Simulator: with the sender in Contacts the card renders as the App Clip bubble; tapping it shows the iOS system
-   card; Open plays the launch screen and mounts the wizard full screen under the status bar (no iframe, no bar).
+7. Simulator: Persona is in the recipient's Contacts by default, so the card renders as the App Clip bubble; tapping it
+   shows the iOS system card; Open downloads the clip (a progress ring fills on the button, about 1.6 s, as on iOS)
+   and mounts the wizard full screen under the status bar (no iframe, no bar, no browser chrome).
    The × (Skip on the value screens) or Back to Messages closes it; the runner reports `app_clip_closed { screen,
    completed, call }` and fires the relay. Out of Contacts the same message is a plain link preview that opens
-   `/clip` in the in-phone Safari sheet.
+   `/clip` in the in-phone Safari sheet (the toggle in the stage menu or on `/db` shows that degraded path). The same
+   wizard runs there and reports back to the phone through `postMessage`, so the sheet closes and the relay fires
+   just the same; from a plain browser tab, "Start in Messages" (`/?sid=&clip=closed`) does the same on arrival.
 8. AASA: `GET /.well-known/apple-app-site-association` → `{"appclips":{"apps":["<APPLE_TEAM_ID>.<APP_CLIP_BUNDLE_ID>"]}}`
    from env (`APPLE_TEAM_ID`, `APP_CLIP_BUNDLE_ID`, `APP_STORE_ID`; empty until the Apple side exists).
 9. Native scaffold `ios/PersonaClip/`: SwiftUI sources that decode the same content JSON (the bundled copy is kept

@@ -376,8 +376,10 @@ export class ServerBrain implements OnboardingBrain {
     }
     if (u && u.origin === window.location.origin && u.pathname === "/clip") {
       // Sender not in Contacts (or the card degraded): the App Clip URL is a normal web page,
-      // which the simulator opens in its in-phone Safari sheet. Just record the fallback.
+      // which the simulator opens in its in-phone Safari sheet. The same onboarding runs there,
+      // so replies wait for it to close exactly as they do for the clip.
       this.postClientEvent("app_clip_fallback_web", { messageId, url: u.toString() });
+      this.onAppClipOpened();
       return;
     }
     // Every other link is shown by the phone's Safari sheet (Simulator); nothing leaves the phone.

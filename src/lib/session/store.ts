@@ -120,7 +120,8 @@ const freshSession = () => ({
   captions: [] as CaptionLine[],
   events: [] as SessionEvent[],
   screen: "messages" as Screen,
-  senderInContacts: false,
+  // Persona is in the recipient's Contacts by default, so the App Clip card renders (toggle off to see iOS's plain-link fallback)
+  senderInContacts: true,
   beliefs: [] as Belief[],
   intentions: [] as Intention[],
   turn: 0,
@@ -327,6 +328,12 @@ export const useSessionStore = create<SessionState>()(
     {
       name: SESSION_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
+      // v2: Persona in Contacts by default (earlier runs persisted `false`, which sent the App Clip link to Safari)
+      version: 2,
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as Record<string, unknown>;
+        return version < 2 ? { ...p, senderInContacts: true } : p;
+      },
       partialize: (s) => ({
         sessionId: s.sessionId,
         createdAt: s.createdAt,

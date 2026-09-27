@@ -225,10 +225,11 @@ card's header art is `public/clip/card-header.svg`. The clip's look follows poke
 serif headline per screen (Instrument Serif via `next/font`), system text, hairline borders, one dark pill button,
 iMessage blue only inside the mockups; it follows the phone's light/dark appearance.
 
-What the simulator shows: with Persona in Contacts (toggle in the stage menu or on `/db`) the card renders as the
-iOS App Clip bubble; tapping it opens the system card; Open plays the launch screen and runs the onboarding full
-screen inside the phone (no iframe, no web bar). Out of Contacts the same message is a plain link preview that
-opens `/clip` in an in-phone Safari sheet, exactly as iOS degrades it. Nothing the bot sends leaves the phone except
+What the simulator shows: Persona is in Contacts by default, so the card renders as the iOS App Clip bubble; tapping
+it opens the system card; Open downloads the clip (progress ring on the button) and runs the onboarding full screen
+inside the phone (no iframe, no web bar, no browser chrome). Toggle Persona out of Contacts (stage menu or `/db`) to
+see iOS's degraded path: the same message as a plain link preview that opens `/clip` in an in-phone Safari sheet; the
+wizard works there too and hands back to the thread when it closes. Nothing the bot sends leaves the phone except
 the Gmail consent popup. `node scripts/e2e-app-clip.mjs` walks through all of it; `--leave-early` leaves after the
 name and checks the relay, `--call` answers "Call me now" and expects the phone to ring.
 

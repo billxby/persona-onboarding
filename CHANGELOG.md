@@ -419,3 +419,27 @@ against a dev server of this tree (Claude `claude-sonnet-5` + `claude-haiku-4-5-
 
 Not done, by design: the SwiftUI scaffold still renders the tour (the web wizard is its reference); `next/font`
 needs network at build time to fetch Instrument Serif (falls back to Georgia if it cannot).
+
+
+## 14. App Clip by default, the download step, no overlap, the call rings from every path (sixth commit, 2026-09-27)
+
+Feedback on §13: tapping the card opened `localhost:3000` in the phone's Safari with an address bar and toolbar, the
+Next button drew over the mock thread, and "Call me now" did nothing. The first and third were one cause: Persona
+was out of Contacts by default (and persisted that way), so iOS's plain-link path opened the wizard as a web page,
+where nothing could close the sheet or ring the phone.
+
+- `senderInContacts` defaults to `true`; the session store's persist version moves to 2 with a migration that flips
+  earlier runs, so the App Clip bubble and system card are what everyone sees. The toggle stays for the degraded case.
+- The system card's Open now downloads the clip: the button becomes the App Store progress ring for ~1.6 s, then the
+  launch screen and the app (`AppClipCard.tsx`, `data-app-clip-ring`).
+- Screen layout: the body scrolls on its own and the footer is fixed, so a long mock thread or the Google rows never
+  sit under the button; the mockups' bubbles are 15 px so three fit.
+- The web fallback reports back like the runner: inside the Safari sheet it posts `persona:clip` to the phone, which
+  closes the sheet and fires the relay (so "Call me now" rings from there too); in a plain tab "Start in Messages"
+  goes to `/?sid=&clip=closed` and the home page fires the relay on arrival. Opening the plain link marks the clip
+  open on the brain so Gmail replies wait for it, as with the runner.
+- Stage menu hints, DESIGN §19.2.7 and the README describe the default and the degraded path.
+
+Verified: typecheck, lint, 152 unit tests, `next build`, and `scripts/e2e-app-clip.mjs` (full and `--call`) against a
+dev server of this tree: Contacts on by default, the download ring before launch, no overlap on the value pages,
+"Call me now" rings.

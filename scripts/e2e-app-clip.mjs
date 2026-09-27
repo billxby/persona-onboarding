@@ -49,8 +49,8 @@ try {
   log("session", sid);
   const openerCount = (await inTexts()).length;
 
-  // Persona in Contacts → the opener's card is the App Clip bubble
-  await page.evaluate(() => window.__persona.session.getState().setSenderInContacts(true));
+  // Persona is in Contacts by default → the opener's card is the App Clip bubble (no toggling needed)
+  check(await page.evaluate(() => window.__persona.session.getState().senderInContacts) === true, "Persona is in Contacts by default");
   const openBtn = page.locator("[data-bubble] button", { hasText: /^Open$/ }).first();
   await openBtn.waitFor({ timeout: 30_000 });
   check(true, "App Clip bubble rendered with an Open button");
@@ -65,8 +65,11 @@ try {
   check((await page.locator("[data-app-clip-card] img").first().getAttribute("src"))?.includes("card-header"), "system card header image is the App Store Connect header");
   await shot(page, "system-card");
 
-  // Open → launch screen → the app (no iframe, no web bar)
+  // Open → the clip downloads (progress ring on the button) → launch screen → the app (no iframe, no web bar)
   await page.locator("[data-app-clip-card] button", { hasText: /^Open$/ }).click();
+  await page.waitForSelector("[data-app-clip-ring]", { timeout: 5000 });
+  check(true, "Open shows the App Store download ring before the clip launches");
+  await shot(page, "installing");
   await page.waitForSelector("[data-app-clip-runner]", { timeout: 10_000 });
   check((await page.locator("[data-app-clip-splash]").count()) === 1, "launch screen shown");
   await shot(page, "launch");

@@ -130,13 +130,20 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
     [state],
   );
 
+  /** The web fallback inside the phone's Safari sheet: the sheet's parent is the simulator, which closes it and takes the relay. */
+  const framed = !embed && typeof window !== "undefined" && window.parent !== window;
+  const startUrl = sid ? `/?sid=${encodeURIComponent(sid)}&clip=closed` : "/";
+
   const finish = useCallback(
     (completed: boolean) => {
       if (doneRef.current) return;
       doneRef.current = true;
-      onDone?.({ screen, completed, call: answers.call ?? null });
+      const detail: ClipDoneDetail = { screen, completed, call: answers.call ?? null };
+      onDone?.(detail);
+      if (framed) window.parent.postMessage({ type: "persona:clip", event: "done", ...detail }, window.location.origin);
+      else if (!embed) window.location.assign(startUrl);
     },
-    [onDone, answers.call, screen],
+    [onDone, answers.call, screen, framed, embed, startUrl],
   );
 
   const goTo = useCallback((s: ClipScreen) => {
@@ -287,6 +294,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
     [postAnswer, goTo],
   );
 
+  // "Call me now": the clip hands off and the phone rings (the relay turn rings it) wherever the clip runs
   useEffect(() => {
     if (screen !== "done" || answers.call !== "yes") return;
     const t = setTimeout(() => finish(true), 1400);
@@ -295,10 +303,9 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
 
   const getApp = useCallback(() => {
     report("get_app");
-    if (!embed) window.open(copy.get_app.url, "_blank", "noopener");
-  }, [report, embed, copy.get_app.url]);
+    if (!embed && !framed) window.open(copy.get_app.url, "_blank", "noopener");
+  }, [report, embed, framed, copy.get_app.url]);
 
-  const startUrl = sid ? `/?sid=${encodeURIComponent(sid)}` : "/";
   const userName = answers.user_name ?? state?.user_name ?? null;
   const agentName = answers.agent_name ?? state?.agent_name ?? null;
   const gmailFinal = answers.gmail === "connected" || state?.gmail_status === "connected";
@@ -338,7 +345,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
 
       <main className="relative flex-1 overflow-hidden">
         <AnimatePresence mode="wait" initial={false} custom={dir}>
-          <motion.section key={`${screen}-${page}`} {...slide} className="absolute inset-0 flex flex-col overflow-y-auto px-6 pb-2">
+          <motion.section key={`${screen}-${page}`} {...slide} className="absolute inset-0 flex flex-col overflow-hidden px-6 pb-2">
             {screen === "welcome" && (
               <Screen
                 body={
@@ -483,7 +490,7 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
                       <SecondaryButton onClick={getApp} testId="get-app" icon={<Mark size={22} className="rounded-[6px] shadow-none" />}>
                         {copy.get_app.label}
                       </SecondaryButton>
-                      {embed ? (
+                      {embed || framed ? (
                         <PrimaryButton onClick={() => finish(true)} testId="done">
                           {copy.done.back}
                         </PrimaryButton>
@@ -508,12 +515,12 @@ export function ClipOnboarding({ content, sid, embed, onDone }: Props) {
   );
 }
 
-/** Body scrolls, footer sits above the strip and the home indicator. */
+/** The body scrolls on its own; the footer never moves and nothing draws over it. */
 function Screen({ body, footer }: { body: React.ReactNode; footer: React.ReactNode }) {
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col">{body}</div>
-      {footer && <div className="shrink-0 pt-5">{footer}</div>}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-3 [scrollbar-width:none]">{body}</div>
+      {footer && <div className="shrink-0 pt-3">{footer}</div>}
     </>
   );
 }

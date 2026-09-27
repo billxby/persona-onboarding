@@ -132,7 +132,7 @@ export function StageMenu() {
               <MenuButton
                 icon={AppWindow}
                 label="Send App Clip card"
-                hint={senderInContacts ? "Meet your Persona: features, wristband, products" : "add Persona to Contacts first, or it renders as a plain link"}
+                hint={senderInContacts ? "the App Clip: Persona's onboarding, full screen" : "add Persona to Contacts first, or it renders as a plain link"}
                 onClick={() => {
                   void sendAppClipCard();
                   setOpen(false);
@@ -141,7 +141,7 @@ export function StageMenu() {
               <MenuButton
                 icon={senderInContacts ? UserRoundX : UserRoundPlus}
                 label={senderInContacts ? "Remove Persona from Contacts" : "Add Persona to Contacts"}
-                hint={senderInContacts ? "App Clip cards degrade to plain links" : "App Clip cards only render for senders in Contacts"}
+                hint={senderInContacts ? "iOS shows unknown senders a plain link that opens Safari" : "App Clip cards only render for senders in Contacts (default on)"}
                 onClick={() => setSenderInContacts(!senderInContacts)}
               />
               <MenuButton
