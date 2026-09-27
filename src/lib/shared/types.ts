@@ -141,6 +141,8 @@ export type EventType =
   | "app_clip_cta"
   | "app_clip_fallback_web"
   | "app_clip_demo"
+  | "app_clip_answer"
+  | "call_offer"
   | "intention"
   | "receptivity"
   | "error";
@@ -153,7 +155,8 @@ export interface EventRow {
   created_at: string;
 }
 
-export type MemorySource = "user_call" | "user_text" | "oauth" | "gmail_body" | "agent_inference";
+/** `clip`: typed into the App Clip's onboarding form (same tier as a text reply; a restatement in chat promotes it). */
+export type MemorySource = "user_call" | "user_text" | "clip" | "oauth" | "gmail_body" | "agent_inference";
 export type MemoryOp = "assert" | "retract" | "resolve";
 export type MemoryActor = "user" | "system" | "gmail" | "agent";
 
@@ -346,7 +349,15 @@ export interface PostMessageResponse {
   message: MessageRow;
   /** a call is live: the client injects the text into the voice session; the bot will end the call */
   call_live: boolean;
+  /** a tapback answered something the agent had asked: the client should POST /api/chat with this trigger */
+  chat_trigger?: ChatTrigger;
+  /** the intention the tapback was read against (goes into the trigger's `reason`) */
+  reacted_key?: string;
 }
+
+/** iMessage tapbacks the server understands (mirrors `Tapback` in src/lib/session/types.ts). */
+export const TAPBACK_KINDS = ["heart", "thumbsUp", "thumbsDown", "haha", "exclaim", "question"] as const;
+export type TapbackKind = (typeof TAPBACK_KINDS)[number];
 
 export type ChatTrigger =
   | "user"
@@ -358,7 +369,11 @@ export type ChatTrigger =
   | "gmail_declined"
   | "welcome_back"
   | "silence_end"
-  | "clip_demo";
+  | "clip_demo"
+  /** the App Clip onboarding closed (finished or abandoned): the thread takes the relay */
+  | "clip_closed"
+  /** the user answered the agent's last question with a tapback */
+  | "tapback";
 
 export interface ChatRequest {
   session_id: string;

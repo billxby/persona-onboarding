@@ -129,13 +129,18 @@ export async function markGmail(session_id: string, status: Exclude<GmailStatus,
   } else {
     const reason = opts.reason ?? (status === "declined" ? "access_denied" : "no_callback");
     await insertEvent(session_id, "oauth_declined", { status, reason });
-    // how they took the Gmail ask, in the ledger's terms: a no backs it off hard, a timeout only a little.
+    // how they took the Gmail ask, in the ledger's terms: a no backs it off hard, a timeout only a little, and
+    // "Not now" on the App Clip's Google screen is a maybe-later (soft ask again in main mode, as the means to the task).
     // The intention stays on the mind either way (core ask): "much later, another angle", never "never".
     const read = reason.startsWith("verbal_no")
       ? { receptivity: 2, signal: "declined" as const, note: "said no to connecting Gmail" }
       : reason === "access_denied"
         ? { receptivity: 2, signal: "declined" as const, note: "declined on Google's consent screen" }
-        : { receptivity: 4, signal: "ignored" as const, note: "link sent, no reaction before it timed out" };
+        : reason === "clip_skip"
+          ? { receptivity: 5, signal: "deferred" as const, note: "skipped the Google step in the App Clip" }
+          : reason === "clip_abandoned"
+            ? { receptivity: 4, signal: "ignored" as const, note: "started Google in the App Clip, left before finishing" }
+            : { receptivity: 4, signal: "ignored" as const, note: "link sent, no reaction before it timed out" };
     await mind("outcome", recordOutcome(session_id, { key: "connect_gmail", ...read, turn, actor: "system", evidence_ref: `gmail:${reason}` }));
   }
   return session;

@@ -1,6 +1,119 @@
 {
-  "_note": "Copy and imagery pulled from yourpersona.com/band on 2026-09-26 (headline, use cases, band specs, privacy claims). Edit freely; the App Clip, the /clip page and the bot all read this file.",
-  "version": "1.1",
+  "_note": "Copy for the Persona App Clip. `onboarding` is the app's setup wizard the clip runs (DESIGN §19); the rest is the tour content the native scaffold still reads. Edit freely; the clip, the /clip page and the bot all read this file.",
+  "version": "2.0",
+  "onboarding": {
+    "welcome": {
+      "title": "Your personal assistant.",
+      "subtitle": "Right in your texts. Nothing new to open, nothing to learn.",
+      "next": "Next"
+    },
+    "values": [
+      {
+        "eyebrow": "The boring stuff",
+        "title": "It does the errands you keep putting off.",
+        "subtitle": "Say it once. It finds the email, drafts the reply, chases the refund.",
+        "thread": [
+          {
+            "from": "user",
+            "text": "Cancel my gym membership before it renews"
+          },
+          {
+            "from": "persona",
+            "text": "Found the Equinox contract. It renews on the 1st, 30 days' notice."
+          },
+          {
+            "from": "persona",
+            "text": "Drafted the cancellation. Want to read it before it goes?"
+          }
+        ]
+      },
+      {
+        "eyebrow": "Your inbox",
+        "title": "It reads so you don't have to.",
+        "subtitle": "Read-only. It tells you what matters and who needs a reply.",
+        "thread": [
+          {
+            "from": "user",
+            "text": "Anything from my landlord?"
+          },
+          {
+            "from": "persona",
+            "text": "One email yesterday: lease renewal, rent up 4%. He wants an answer by Friday."
+          },
+          {
+            "from": "persona",
+            "text": "Want me to draft a counter?"
+          }
+        ]
+      },
+      {
+        "eyebrow": "When typing is slow",
+        "title": "It calls when that's faster.",
+        "subtitle": "Two minutes on the phone beats twenty texts. You decide when.",
+        "thread": [
+          {
+            "from": "user",
+            "text": "Too much to type, can you just call?"
+          },
+          {
+            "from": "persona",
+            "text": "Calling you now."
+          },
+          {
+            "from": "persona",
+            "text": "Call ended · 2:14. Dentist moved to Thursday, refund's on its way."
+          }
+        ]
+      }
+    ],
+    "user_name": {
+      "title": "What should I call you?",
+      "subtitle": "A first name is perfect.",
+      "placeholder": "Your name",
+      "skip": "Skip for now"
+    },
+    "agent_name": {
+      "title": "And what do you want to call me?",
+      "subtitle": "That's how I'll show up in your contacts.",
+      "placeholder": "Persona",
+      "suggestions": [
+        "Persona",
+        "Jarvis",
+        "Sam",
+        "Max"
+      ],
+      "skip": "Persona is fine"
+    },
+    "gmail": {
+      "title": "Connect Google so I can actually do things.",
+      "subtitle": "Read-only. Nothing is ever sent without your yes.",
+      "rows": [
+        "Read what came in, tell you what matters",
+        "Find the membership email, the lease, the invoice",
+        "Draft the reply for you to approve"
+      ],
+      "connect": "Continue with Google",
+      "demo": "Use the demo inbox instead",
+      "skip": "Not now"
+    },
+    "call": {
+      "title": "Want me to call you to set up the rest?",
+      "subtitle": "Two minutes, by voice. Or we keep going in Messages.",
+      "yes": "Call me now",
+      "no": "I'll text"
+    },
+    "done": {
+      "title": "You're set.",
+      "subtitle": "I'm in your Messages. Text me one thing you want off your plate.",
+      "calling": "Hanging up here. Calling you now.",
+      "back": "Back to Messages",
+      "start_web": "Start in Messages"
+    },
+    "get_app": {
+      "label": "Get the Persona app",
+      "url": "https://apps.apple.com/"
+    }
+  },
   "hero": {
     "eyebrow": "Persona",
     "title": "Your assistant, right in Messages.",
@@ -9,7 +122,7 @@
       "label": "Start in Messages",
       "url": "https://yourpersona.com/start"
     },
-    "image": "/clip/og.png"
+    "image": "/clip/card-header.svg"
   },
   "features": [
     {

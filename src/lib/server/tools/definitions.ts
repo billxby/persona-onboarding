@@ -8,6 +8,7 @@ import {
   forgetInput,
   graduateInput,
   intentionInput,
+  reactInput,
   recentEmailsInput,
   rememberInput,
   requestGmailConnectInput,
@@ -36,6 +37,7 @@ export const TOOL_NAMES = [
   "switch_channel",
   "end_call",
   "send_app_clip",
+  "react",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export const isToolName = (n: string): n is ToolName => (TOOL_NAMES as readonly string[]).includes(n);
@@ -110,7 +112,7 @@ export const TOOL_DEFS: Record<ToolName, ToolDef> = {
     channels: BOTH,
   },
   switch_channel: {
-    description: `Move the conversation: "call" rings the user's phone (only when they ask for a call), "text" continues in the chat (on a call this also ends the call). ${RESULT}`,
+    description: `Move the conversation: "call" rings the user's phone (when they ask for a call, or say yes to your one call offer), "text" continues in the chat (on a call this also ends the call). ${RESULT}`,
     input: switchChannelInput,
     channels: BOTH,
   },
@@ -120,9 +122,14 @@ export const TOOL_DEFS: Record<ToolName, ToolDef> = {
     channels: ["call"],
   },
   send_app_clip: {
-    description: `Send the "Meet your Persona" App Clip card: a tour of what Persona can do, the wristband and other products, and how to get them. Use when the user asks what you can do or about products/pricing/the wristband, or once after graduation as an optional tour. Never send it twice. ${RESULT}`,
+    description: `Send the Persona App Clip card: the app's onboarding (a short setup: their name, what to call you, Google, whether they want a call) plus what Persona can do. Use when the user asks what you can do, wants to set things up properly, or once after graduation. Never send it twice. ${RESULT}`,
     input: sendAppClipInput,
     channels: BOTH,
+  },
+  react: {
+    description: `Put an iMessage tapback on the user's last message (heart, thumbsUp, thumbsDown, haha, exclaim, question). Text only. Use it the way people do: a heart for a name or a thanks, a thumbs-up for a plain yes. At most one per reply, never on a question, and a reaction can be the whole reply. ${RESULT}`,
+    input: reactInput,
+    channels: ["text"],
   },
 };
 

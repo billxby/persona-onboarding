@@ -1,48 +1,54 @@
 "use client";
 
-import { X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { ClipOnboarding, type ClipDoneDetail } from "@/app/clip/ClipOnboarding";
 import type { LinkPreview } from "@/lib/session/types";
+import type { ClipContent } from "@/lib/shared/clip";
 import { PersonaAvatar } from "./Avatar";
 
-const SPLASH_MS = 700;
+const SPLASH_MS = 650;
 
 /**
- * The App Clip *running* inside the phone (what iOS shows after the user taps
- * Open on the App Clip card): a launch splash, then the clip's UI under the
- * compact App Clip bar. The UI is the same /clip page the invocation URL serves,
- * embedded so the simulator and the web fallback never drift apart.
+ * The App Clip *running* inside the phone (what iOS shows after the user taps Open on the App Clip
+ * card): the clip's launch screen, then the app itself, full screen under the system status bar.
+ * No web chrome, no iframe: the same `ClipOnboarding` component the /clip web fallback renders,
+ * mounted directly, so the two never drift and the wizard can talk to the phone (closing, ringing).
  */
-export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: () => void }) {
-  const [phase, setPhase] = useState<"splash" | "running">("splash");
+export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (detail?: Record<string, unknown>) => void }) {
+  const [splashDone, setSplashDone] = useState(false);
+  const [content, setContent] = useState<ClipContent | null>(null);
+  const [failed, setFailed] = useState(false);
   const appName = link.appClip?.appName ?? "Persona";
 
-  const src = useMemo(() => {
+  const sid = useMemo(() => {
     try {
       const u = new URL(link.url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-      u.searchParams.set("embed", "1");
-      return `${u.pathname}${u.search}`;
+      const v = u.searchParams.get("sid");
+      return v && /^[0-9a-f-]{36}$/i.test(v) ? v : undefined;
     } catch {
-      return "/clip?embed=1";
+      return undefined;
     }
   }, [link.url]);
 
   useEffect(() => {
-    const t = setTimeout(() => setPhase("running"), SPLASH_MS);
+    const t = setTimeout(() => setSplashDone(true), SPLASH_MS);
     return () => clearTimeout(t);
   }, []);
 
-  // CTA taps inside the clip: the hero "Start in Messages" closes the clip; everything else just reports.
+  // the clip's copy comes from the same endpoint the native clip reads
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      const d = e.data as { type?: string; event?: string; action?: string } | null;
-      if (!d || d.type !== "persona:clip") return;
-      if (d.event === "cta" && d.action === "close") onClose();
+    let alive = true;
+    fetch("/api/clip/content", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((c: ClipContent) => alive && setContent(c))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
     };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [onClose]);
+  }, []);
+
+  const done = (d: ClipDoneDetail) => onClose({ screen: d.screen, completed: d.completed, call: d.call });
 
   return (
     <motion.div
@@ -52,45 +58,28 @@ export function AppClipRunner({ link, onClose }: { link: LinkPreview; onClose: (
       exit={{ y: 844, opacity: 0.6 }}
       transition={{ type: "spring", stiffness: 300, damping: 34 }}
       // below the status bar (z-30) so the clock keeps showing, above everything in the thread
-      className="absolute inset-0 z-[28] flex flex-col bg-screen"
+      className="absolute inset-0 z-[28] flex flex-col bg-clip-bg text-clip-ink"
     >
       {/* room for the system status bar */}
-      <div className="h-[54px] shrink-0 bg-screen" />
+      <div className="h-[54px] shrink-0" />
 
-      {phase === "splash" ? (
-        <motion.div
-          key="splash"
-          data-app-clip-splash
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-1 flex-col items-center justify-center gap-4 bg-screen"
-        >
-          <PersonaAvatar size={92} className="rounded-[24px] shadow-lg" />
+      {!splashDone || (!content && !failed) ? (
+        <motion.div key="splash" data-app-clip-splash initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-1 flex-col items-center justify-center gap-4">
+          <PersonaAvatar size={92} className="rounded-[26px] shadow-lg" />
           <div className="text-[20px] font-semibold tracking-tight">{appName}</div>
-          <div className="text-[12px] font-medium uppercase tracking-[0.12em] text-screen-ink/40">App Clip</div>
         </motion.div>
+      ) : failed || !content ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <PersonaAvatar size={64} className="rounded-[18px]" />
+          <div className="text-[17px] text-clip-ink/70">Couldn&apos;t load right now. Everything works in Messages too.</div>
+          <button onClick={() => onClose({ screen: "welcome", completed: false, failed: true })} className="clip-btn-primary h-[48px] rounded-full px-6 text-[16px] font-semibold">
+            Back to Messages
+          </button>
+        </div>
       ) : (
-        <>
-          <div className="flex h-[44px] shrink-0 items-center gap-2.5 border-b border-screen-ink/[0.06] bg-screen/85 px-3 backdrop-blur-xl">
-            <PersonaAvatar size={26} className="rounded-[7px]" />
-            <div className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-              {appName} <span className="font-normal text-screen-ink/40">· App Clip</span>
-            </div>
-            <button
-              onClick={onClose}
-              aria-label="Close App Clip"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-screen-ink/[0.06] text-screen-ink/70 active:bg-screen-ink/10"
-            >
-              <X className="h-4 w-4" strokeWidth={2.5} />
-            </button>
-          </div>
-          <iframe
-            title={`${appName} App Clip`}
-            src={src}
-            className="w-full flex-1 border-0 bg-[#f2f2f7]"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-          />
-        </>
+        <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className="min-h-0 flex-1">
+          <ClipOnboarding content={content} sid={sid} embed onDone={done} />
+        </motion.div>
       )}
     </motion.div>
   );

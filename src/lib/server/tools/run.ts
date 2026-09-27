@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { BUILTIN_INTENTIONS, builtinForSlot } from "@/lib/memory/intentions";
+import { BUILTIN_INTENTIONS, builtinForSlot, OFFER_CALL_KEY } from "@/lib/memory/intentions";
 import { completeIntention, deferIntention, dropIntention, mindFor, openIntention, recordNudge, recordOutcome, reopenIntention, settleIfOpen } from "@/lib/memory/mind";
 import { appendMemoryEvent, assertFact, explainBelief, projectBeliefs, retractFact } from "@/lib/memory/store";
 import { gmailFor } from "@/lib/server/gmail/client";
@@ -12,7 +12,7 @@ import { asks, nextBestAsk, turnOf } from "@/lib/server/state";
 import { contentTokens, isMoodInference, validateName, validateNeed } from "@/lib/server/validators";
 import type { MemorySource, MessageRow, ServerChannel, SessionRow, SlotName, StateSummary, ToolResult } from "@/lib/shared/types";
 import { stateSummary } from "@/lib/shared/types";
-import { APP_CLIP_CARD, clipUrl } from "@/lib/shared/clip";
+import { APP_CLIP_CARD, APP_CLIP_HEADER_IMAGE, clipUrl } from "@/lib/shared/clip";
 import { isToolName, TOOL_DEFS, type ToolName } from "./definitions";
 
 /**
@@ -33,6 +33,8 @@ export interface EmailSummary {
 export interface ToolContext {
   session: SessionRow;
   channel: ServerChannel;
+  /** where the value came from when not typed into the chat: the App Clip's onboarding form (text channel, own provenance) */
+  source?: "clip";
 }
 
 export interface ToolEffects {
@@ -64,7 +66,9 @@ interface HandlerOut {
 
 type Handler = (ctx: ToolContext, input: Record<string, unknown>, effects: ToolEffects) => Promise<HandlerOut>;
 
-const sourceFor = (channel: ServerChannel): MemorySource => (channel === "call" ? "user_call" : "user_text");
+const sourceFor = (ctx: Pick<ToolContext, "channel" | "source">): MemorySource => (ctx.source === "clip" ? "clip" : ctx.channel === "call" ? "user_call" : "user_text");
+/** `text` | `call` | `clip`: where a tool call came from, for evidence refs and event payloads. */
+const viaOf = (ctx: Pick<ToolContext, "channel" | "source">) => ctx.source ?? ctx.channel;
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 const short = (s: string | null | undefined, n: number) => {
   const v = (s ?? "").replace(/\s+/g, " ").trim();
@@ -118,21 +122,24 @@ const setSlot: Handler = async (ctx, input, effects) => {
   const slot = input.slot as SlotName;
   const raw = String(input.value ?? "").trim();
   let session = ctx.session;
-  const source = sourceFor(ctx.channel);
+  const source = sourceFor(ctx);
+  const via = viaOf(ctx);
+  const fromClip = ctx.source === "clip";
 
   // explicit skip / verbal decline
   if (/^(skip|skipped|pass)$/i.test(raw) || (slot === "gmail" && /^(declined?|no|nope|not now|later|skip)$/i.test(raw))) {
     if (slot === "need") return { session, ok: false, error: "the need is never skipped: offer three concrete options instead", ask_again: true };
     if (slot === "gmail") {
-      // markGmail is the only place that flips gmail_status (it logs oauth_declined)
-      session = await markGmail(session.id, "declined", null, { reason: `verbal_no:${ctx.channel}` });
+      // markGmail is the only place that flips gmail_status (it logs oauth_declined and scores the intention)
+      session = await markGmail(session.id, "declined", null, { reason: fromClip ? "clip_skip" : `verbal_no:${ctx.channel}` });
       session = await patchSession(session.id, (s) => (s.phase === "warmup" ? { phase: "collecting" } : null));
     } else {
       session = await patchSession(session.id, (s) => ({ attempts: { ...(s.attempts ?? {}), [slot]: Math.max(asks(s, slot), 3) }, phase: s.phase === "warmup" ? "collecting" : s.phase }));
-      await insertEvent(session.id, "slot_skipped", { slot, via: "verbal", channel: ctx.channel });
-      // a skip is a clear no for now: the intention backs off hard but stays on the mind
+      await insertEvent(session.id, "slot_skipped", { slot, via: fromClip ? "clip" : "verbal", channel: ctx.channel });
+      // a spoken skip is a clear no for now (backs off hard); "skip" on a form is "not now" (rests two turns). Either way it stays on the mind.
       const b = builtinForSlot(slot);
-      if (b) await quietly("skip outcome", recordOutcome(session.id, { key: b.key, receptivity: 1, signal: "declined", note: "asked to skip it", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${ctx.channel}` }));
+      const read = fromClip ? { receptivity: 3, signal: "ignored" as const, note: "skipped it in the App Clip" } : { receptivity: 1, signal: "declined" as const, note: "asked to skip it" };
+      if (b) await quietly("skip outcome", recordOutcome(session.id, { key: b.key, ...read, turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${via}` }));
     }
     effects.instructions_changed = true;
     const placeholder = slot === "user_name" ? "friend" : slot === "agent_name" ? "Persona" : null;
@@ -183,11 +190,11 @@ const setSlot: Handler = async (ctx, input, effects) => {
     if (old && old !== value) patch.confirmed = { ...(s.confirmed ?? {}), [slot]: false };
     return patch;
   });
-  await insertEvent(session.id, "slot_set", { slot, value, previous: old ?? null, channel: ctx.channel, ...(volunteeredOnCall ? { volunteered_on_call: true } : {}) });
-  await assertFact(session.id, { predicate: slot, object: value, source, actor: "user", evidence_ref: `tool:set_slot:${ctx.channel}` });
+  await insertEvent(session.id, "slot_set", { slot, value, previous: old ?? null, channel: ctx.channel, via, ...(volunteeredOnCall ? { volunteered_on_call: true } : {}) });
+  await assertFact(session.id, { predicate: slot, object: value, source, actor: "user", evidence_ref: `tool:set_slot:${via}` });
   effects.instructions_changed = true;
   const b = builtinForSlot(slot);
-  if (b) await quietly("settle", settleIfOpen(session.id, { key: b.key, reason: `${slot} set${old && old !== value ? " (changed)" : ""}`, turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${ctx.channel}` }));
+  if (b) await quietly("settle", settleIfOpen(session.id, { key: b.key, reason: `${slot} set${fromClip ? " in the App Clip" : ""}${old && old !== value ? " (changed)" : ""}`, turn: turnInProgress(session), actor: "system", evidence_ref: `tool:set_slot:${via}` }));
 
   if (slot === "agent_name") {
     const card = await insertMessage({
@@ -218,7 +225,7 @@ const confirmSlot: Handler = async (ctx, input, effects) => {
   if (!filled) return { session, ok: false, error: `${slot} is not filled yet; nothing to confirm`, ask_again: true };
   session = await patchSession(session.id, (s) => ({ confirmed: { ...(s.confirmed ?? {}), [slot]: true } }));
   const object = slot === "gmail" ? (session.gmail_email ?? "connected") : String(session[slot]);
-  await assertFact(session.id, { predicate: slot, object, source: slot === "gmail" ? "oauth" : sourceFor(ctx.channel), actor: "user", evidence_ref: `tool:confirm_slot:${ctx.channel}` });
+  await assertFact(session.id, { predicate: slot, object, source: slot === "gmail" ? "oauth" : sourceFor(ctx), actor: "user", evidence_ref: `tool:confirm_slot:${ctx.channel}` });
   effects.instructions_changed = true;
   return { session, ok: true, note: `${slot} confirmed` };
 };
@@ -366,7 +373,7 @@ const forget: Handler = async (ctx, input, effects) => {
   let session = ctx.session;
   const subject = String(input.subject);
   const predicate = String(input.predicate);
-  await retractFact(session.id, { subject, predicate, object: "*", source: sourceFor(ctx.channel), evidence_ref: `tool:forget:${ctx.channel}` });
+  await retractFact(session.id, { subject, predicate, object: "*", source: sourceFor(ctx), evidence_ref: `tool:forget:${ctx.channel}` });
   if (subject === "user" && (predicate === "user_name" || predicate === "need" || predicate === "agent_name")) {
     session = await patchSession(session.id, (s) => ({ [predicate]: null, confirmed: { ...(s.confirmed ?? {}), [predicate]: false } }) as Partial<SessionRow>);
     effects.instructions_changed = true;
@@ -447,10 +454,15 @@ const graduate: Handler = async (ctx, input, effects) => {
   session = await patchSession(session.id, () => ({ mode: "main", phase: "graduated", graduated_at: nowIso() }));
   await insertEvent(session.id, "graduated", { reason, channel: ctx.channel, with_defaults: !session.need || !session.user_name });
   if (skipAll) {
-    // "skip everything" is a no to every open ask, not just the one on the table: each backs off hard and stays on the mind
-    const missing = (slot: SlotName) => (slot === "gmail" ? session.gmail_status !== "connected" : !session[slot as Exclude<SlotName, "gmail">]);
+    // "skip everything" is a no to every open ask, not just the one on the table: each backs off hard and stays on the mind.
+    // The call offer has no slot: "skip everything" answers it too (text it is), and it settles rather than backs off (DESIGN §1.7).
+    const missing = (slot: SlotName | null) => (slot === null ? session.channel_pref === null : slot === "gmail" ? session.gmail_status !== "connected" : !session[slot as Exclude<SlotName, "gmail">]);
     for (const b of BUILTIN_INTENTIONS) {
       if (!missing(b.slot)) continue;
+      if (b.slot === null) {
+        await quietly(`skip-all settle ${b.key}`, settleIfOpen(session.id, { key: b.key, reason: "skipped onboarding: text it is", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:graduate:${ctx.channel}` }));
+        continue;
+      }
       await quietly(`skip-all outcome ${b.key}`, recordOutcome(session.id, { key: b.key, receptivity: 1, signal: "declined", note: "asked to skip onboarding", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:graduate:${ctx.channel}` }));
     }
   }
@@ -489,10 +501,13 @@ const switchChannel: Handler = async (ctx, input, effects) => {
     session = await patchSession(session.id, () => ({ channel_pref: "call" }));
     effects.ring = true;
     effects.instructions_changed = true;
+    // a call is happening: the one call offer is answered, whoever raised it
+    await quietly("settle call offer", settleIfOpen(session.id, { key: OFFER_CALL_KEY, reason: "call started", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:switch_channel:${viaOf(ctx)}` }));
     return { session, ok: true, note: "ringing in a moment; say you're calling now, then stop" };
   }
   session = await patchSession(session.id, () => ({ channel_pref: "text" }));
   effects.instructions_changed = true;
+  await quietly("settle call offer", settleIfOpen(session.id, { key: OFFER_CALL_KEY, reason: "prefers text", turn: turnInProgress(session), actor: "system", evidence_ref: `tool:switch_channel:${viaOf(ctx)}` }));
   if (ctx.channel === "call") {
     effects.end_call = true;
     return { session, ok: true, note: "switching to text: say one short line, the call ends now" };
@@ -509,7 +524,34 @@ const endCall: Handler = async (ctx, input, effects) => {
   return { session, ok: true, note: "call is ending; the chat continues" };
 };
 
-/** Insert the "Meet your Persona" App Clip link card into the thread and log that it was shown. */
+/**
+ * A tapback from the agent on the user's last text bubble (DESIGN §7.8: tapbacks for choices where natural).
+ * The row renders as a reaction on that bubble; it is never a bubble of its own.
+ */
+const react: Handler = async (ctx, input, effects) => {
+  const session = ctx.session;
+  if (ctx.channel !== "text") return { session, ok: false, error: "tapbacks are a text thing" };
+  const tapback = String(input.tapback);
+  const thread = await listMessages(session.id, { channel: "text" });
+  const target = [...thread].reverse().find((m) => m.role === "user" && m.kind === "text");
+  if (!target) return { session, ok: false, error: "nothing of theirs to react to yet" };
+  const already = thread.some((m) => m.kind === "tapback" && m.payload?.by === "assistant" && (m.payload?.target_id === target.id || (target.client_id && m.payload?.target_client_id === target.client_id)) && m.payload?.added !== false);
+  if (already) return { session, ok: true, note: "already reacted to that one; say it in words if you must" };
+  // user bubbles are keyed by their client uuid in the browser; server-side rows fall back to the row id
+  const ref = target.client_id ? { target_client_id: target.client_id } : { target_id: target.id };
+  const row = await insertMessage({
+    session_id: session.id,
+    role: "assistant",
+    kind: "tapback",
+    channel: "text",
+    content: null,
+    payload: { ...ref, tapback, by: "assistant", added: true },
+  });
+  effects.messages.push(row);
+  return { session, ok: true, note: `reacted ${tapback} to "${short(target.content, 40)}"; a reaction can carry the whole reply, or add one short line` };
+};
+
+/** Insert the Persona App Clip link card into the thread and log that it was shown. */
 export async function insertAppClipCard(session_id: string, via: "tool" | "opener" | "first_reply", extra: Record<string, unknown> = {}): Promise<MessageRow> {
   const url = clipUrl(env.APP_URL, session_id);
   const card = await insertMessage({
@@ -523,7 +565,7 @@ export async function insertAppClipCard(session_id: string, via: "tool" | "opene
       domain: new URL(env.APP_URL).host,
       title: APP_CLIP_CARD.title,
       description: APP_CLIP_CARD.subtitle,
-      image_url: `${env.APP_URL}/clip/og.png`,
+      image_url: `${env.APP_URL}${APP_CLIP_HEADER_IMAGE}`,
       app_clip: { ...APP_CLIP_CARD },
     },
   });
@@ -531,7 +573,7 @@ export async function insertAppClipCard(session_id: string, via: "tool" | "opene
   return card;
 }
 
-/** "Meet your Persona" App Clip card (DESIGN App Clip section): once per session from the model, both channels. The opener sends it too. */
+/** The Persona App Clip card (DESIGN §19): the app's onboarding. Once per session from the model, both channels. The opener sends it too. */
 const sendAppClip: Handler = async (ctx, input, effects) => {
   const session = ctx.session;
   const already = (await listEvents(session.id, ["app_clip_card_shown"])).some((e) => e.payload?.via === "tool");
@@ -555,6 +597,7 @@ const HANDLERS: Record<ToolName, Handler> = {
   switch_channel: switchChannel,
   end_call: endCall,
   send_app_clip: sendAppClip,
+  react,
 };
 
 // ---------------------------------------------------------------------------

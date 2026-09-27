@@ -28,4 +28,8 @@ export interface OnboardingBrain {
   refresh?(): Promise<void>;
   /** Record a client-side UI event on the server (App Clip opened/closed/CTA…). Fire and forget. */
   postClientEvent?(type: string, payload?: Record<string, unknown>): void;
+  /** The App Clip is running in the phone: hold replies that would land behind it (a Gmail connect from inside the clip). */
+  onAppClipOpened?(): void;
+  /** The App Clip closed (finished or abandoned): the thread takes the relay and acknowledges what was set up. */
+  onAppClipClosed?(): void;
 }

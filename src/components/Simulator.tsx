@@ -14,6 +14,8 @@ import { PhoneFrame } from "@/components/phone/PhoneFrame";
 import { SafariSheet } from "@/components/phone/SafariSheet";
 import { PHONE_H, PHONE_W, usePhoneScale } from "@/components/phone/usePhoneScale";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * The phone: iMessage thread with the call screen overlaid when a call is
  * ringing or live. This is the only component that knows about both channels.
@@ -39,6 +41,21 @@ export function Simulator() {
   const contactName = agentName || "Persona";
   const callActive = call.state === "connecting" || call.state === "live";
   const showCall = screen === "call" && call.state !== "idle";
+
+  // `/?sid=<uuid>` resumes that server session (the App Clip's web fallback ends with "Start in Messages"
+  // pointing here). Runs before the brain boots; the param is then dropped from the address bar.
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const sid = url.searchParams.get("sid");
+    if (!sid) return;
+    if (UUID.test(sid) && sid !== useSessionStore.getState().sessionId) {
+      useSessionStore.getState().reset();
+      useSessionStore.setState({ sessionId: sid });
+    }
+    url.searchParams.delete("sid");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [hydrated]);
 
   // On (re)load: a call that was live when the tab closed is a drop. An empty thread
   // shows the prefilled "Hey Persona" in the compose field; nothing is sent for you.
@@ -84,9 +101,16 @@ export function Simulator() {
     void getBrain().onLinkOpen(messageId, url);
     setSafariUrl(url);
   };
-  // App Clip cards run inside the phone (AppClipRunner); the brain only records the event.
-  const onOpenAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_opened", { messageId, url });
-  const onCloseAppClip = (messageId: string, url: string) => getBrain().postClientEvent?.("app_clip_closed", { messageId, url });
+  // App Clip cards run inside the phone (AppClipRunner). The brain records the event, holds replies while the
+  // clip is up, and takes the relay in the thread once it closes.
+  const onOpenAppClip = (messageId: string, url: string) => {
+    getBrain().postClientEvent?.("app_clip_opened", { messageId, url });
+    getBrain().onAppClipOpened?.();
+  };
+  const onCloseAppClip = (messageId: string, url: string, detail?: Record<string, unknown>) => {
+    getBrain().postClientEvent?.("app_clip_closed", { messageId, url, ...(detail ?? {}) });
+    getBrain().onAppClipClosed?.();
+  };
 
   const onReact = (messageId: string, kind: ReactionKind) => {
     const added = toggleReaction(messageId, kind, "user");

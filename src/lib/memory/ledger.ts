@@ -4,9 +4,11 @@
  * imports: this file runs in unit tests, on the server and, if ever needed, in
  * the browser. Facts are never deleted, only re-statused with a reason.
  *
- * Trust ladder (fixed): oauth 1.0 → user_call / user_text 0.6 (+0.15 per
+ * Trust ladder (fixed): oauth 1.0 → user_call / user_text / clip 0.6 (+0.15 per
  * consistent restatement, cap 0.9) → agent_inference 0.3 (cap 0.5) →
  * gmail_body 0 (quarantined: candidate only until the user confirms).
+ * `clip` is a value typed into the App Clip's onboarding form: same tier as a
+ * text reply, so restating it in the chat promotes the belief the usual way.
  */
 import type { Belief, BeliefStatus, MemoryActor, MemoryEvent, MemorySource } from "@/lib/shared/types";
 
@@ -33,8 +35,8 @@ export interface BeliefRecord {
 /** Keyed by `subject|predicate|object` (components with `|` or `\` are escaped). */
 export type Beliefs = Map<string, BeliefRecord>;
 
-const BASE: Record<MemorySource, number> = { oauth: 1.0, user_call: 0.6, user_text: 0.6, agent_inference: 0.3, gmail_body: 0 };
-const CAP: Record<MemorySource, number> = { oauth: 1.0, user_call: 0.9, user_text: 0.9, agent_inference: 0.5, gmail_body: 0 };
+const BASE: Record<MemorySource, number> = { oauth: 1.0, user_call: 0.6, user_text: 0.6, clip: 0.6, agent_inference: 0.3, gmail_body: 0 };
+const CAP: Record<MemorySource, number> = { oauth: 1.0, user_call: 0.9, user_text: 0.9, clip: 0.9, agent_inference: 0.5, gmail_body: 0 };
 const STEP = 0.15;
 
 export const QUARANTINE_REASON = "untrusted email content; candidate only until the user confirms";

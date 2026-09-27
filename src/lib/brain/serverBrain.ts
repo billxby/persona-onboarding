@@ -48,6 +48,8 @@ export class ServerBrain implements OnboardingBrain {
   private gmailTimer: ReturnType<typeof setTimeout> | null = null;
   private lastGmailReplyAt = 0;
   private welcomed = new Set<string>();
+  /** the App Clip is running in the phone: replies wait for it to close (the relay turn covers them) */
+  private clipOpen = false;
 
   constructor() {
     if (typeof window === "undefined") return;
@@ -199,6 +201,7 @@ export class ServerBrain implements OnboardingBrain {
     this.pollTimer = this.retryTimer = this.debounceTimer = this.gmailTimer = null;
     this.bootedFor = null;
     this.lastFullSyncAt = 0;
+    this.clipOpen = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -389,15 +392,37 @@ export class ServerBrain implements OnboardingBrain {
 
   async onUserReaction(messageId: string, kind: ReactionKind, added: boolean): Promise<void> {
     const st = session.get();
+    const sid = st.sessionId;
     st.logEvent("user.reaction", { messageId, ...kind, added });
     const target = messageId.startsWith("srv-") ? { target_id: Number(messageId.slice(4)) } : { target_client_id: messageId };
-    void postJson("/api/messages", {
-      session_id: st.sessionId,
-      client_id: crypto.randomUUID(),
-      text: "",
-      kind: "tapback",
-      payload: { ...target, ...(kind.type === "tapback" ? { tapback: kind.tapback } : { emoji: kind.emoji }), by: "user", added },
-    }).catch(() => undefined);
+    try {
+      const res = await postJson<PostMessageResponse>("/api/messages", {
+        session_id: sid,
+        client_id: crypto.randomUUID(),
+        text: "",
+        kind: "tapback",
+        payload: { ...target, ...(kind.type === "tapback" ? { tapback: kind.tapback } : { emoji: kind.emoji }), by: "user", added },
+      });
+      // a tapback on the agent's last question is its answer: the server says so, and the chat acts on it
+      if (session.get().sessionId === sid && res.chat_trigger) void this.requestReply(res.chat_trigger, res.reacted_key);
+    } catch {
+      /* a reaction is never worth an error bubble */
+    }
+  }
+
+  onAppClipOpened(): void {
+    this.clipOpen = true;
+  }
+
+  /** The clip closed: the thread takes the relay (DESIGN §19). Anything the clip captured is already on the session. */
+  onAppClipClosed(): void {
+    if (!this.clipOpen) return;
+    this.clipOpen = false;
+    if (this.gmailTimer) {
+      clearTimeout(this.gmailTimer);
+      this.gmailTimer = null;
+    }
+    void this.requestReply("clip_closed");
   }
 
   async onCallAnswered(): Promise<void> {
@@ -441,10 +466,15 @@ export class ServerBrain implements OnboardingBrain {
       clearTimeout(this.gmailTimer);
       this.gmailTimer = null;
     }
+    const st = session.get();
+    if (this.clipOpen) {
+      // Google was connected (or skipped) from inside the App Clip: no reply behind the clip; the relay turn covers it
+      st.logEvent("gmail.notified_in_clip", { status, email });
+      return;
+    }
     const now = Date.now();
     if (now - this.lastGmailReplyAt < GMAIL_DEDUPE_MS) return;
     this.lastGmailReplyAt = now;
-    const st = session.get();
     st.logEvent("gmail.notified", { status, email });
     if (st.call.state === "live") {
       callController.injectSystem(

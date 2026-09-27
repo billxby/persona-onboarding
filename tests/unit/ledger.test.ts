@@ -22,7 +22,7 @@ import type { MemoryActor, MemoryEvent, MemoryOp, MemorySource } from "@/lib/sha
 const SID = "00000000-0000-0000-0000-000000000001";
 let nextId = 1;
 
-const ACTOR_FOR: Record<MemorySource, MemoryActor> = { oauth: "system", user_call: "user", user_text: "user", agent_inference: "agent", gmail_body: "gmail" };
+const ACTOR_FOR: Record<MemorySource, MemoryActor> = { oauth: "system", user_call: "user", user_text: "user", clip: "user", agent_inference: "agent", gmail_body: "gmail" };
 
 function ev(partial: Partial<MemoryEvent> & { object: string; source: MemorySource }): MemoryEvent {
   const id = partial.id ?? nextId++;
@@ -53,6 +53,8 @@ describe("trust ladder", () => {
     expect(trust("oauth")).toBe(1.0);
     expect(trust("user_call")).toBe(0.6);
     expect(trust("user_text")).toBe(0.6);
+    expect(trust("clip")).toBe(0.6);
+    expect(trustCap("clip")).toBe(0.9);
     expect(trust("agent_inference")).toBe(0.3);
     expect(trust("gmail_body")).toBe(0);
   });

@@ -17,6 +17,8 @@ import {
   seedPayload,
   STICKY_DROP_REASON,
   STICKY_DROP_TURNS,
+  tapbackGlyph,
+  tapbackReceptivity,
   toIntentionRows,
   type Mind,
 } from "@/lib/memory/intentions";
@@ -69,14 +71,16 @@ describe("backoff", () => {
 });
 
 describe("seed and open", () => {
-  it("seeds the four built-ins, all eligible now and priority-ordered", () => {
+  it("seeds the five built-ins, all eligible now and priority-ordered; only the call offer is not sticky", () => {
     const m = fold(seed());
-    expect([...m.keys()]).toEqual(["get_name", "learn_need", "connect_gmail", "name_agent"]);
+    expect([...m.keys()]).toEqual(["get_name", "learn_need", "offer_call", "connect_gmail", "name_agent"]);
     for (const r of m.values()) {
       expect(r.status).toBe("open");
-      expect(r.sticky).toBe(true);
+      expect(r.sticky).toBe(r.key !== "offer_call");
       expect(eligibility(r, 0, T0).eligible).toBe(true);
     }
+    expect(m.get("offer_call")!.slot).toBeNull();
+    expect(m.get("offer_call")!.channels).toEqual(["text"]);
     expect(nextIntention(m.values(), "text", 0, T0)?.key).toBe("get_name");
     expect(nextIntention(m.values(), "call", 0, T0)?.key).toBe("get_name");
     expect(m.get("name_agent")!.channels).toEqual(["text"]);
@@ -276,6 +280,21 @@ describe("detecting a nudge in the reply", () => {
     // a creatively framed ask for the plan's slot still counts for it
     expect(detectNudges(["Got it.", "So what's one thing I can actually help you knock out this week?"], m.values(), "need", "text").map((n) => n.key)).toEqual(["learn_need"]);
   });
+  it("the call offer: its cue never matches the name ask, a slot-less raise gets the credit, and a tapback reads as yes or no", () => {
+    expect(detectNudges(["What should I call you?"], m.values(), null, "text").map((n) => n.key)).toEqual(["get_name"]);
+    expect(detectNudges(["Can I call you Bill?"], m.values(), "user_name", "text").map((n) => n.key)).toEqual(["get_name"]);
+    expect(detectNudges(["Want me to call you to set up the rest? Two minutes."], m.values(), null, "text").map((n) => n.key)).toEqual(["offer_call"]);
+    // phrased outside the cue, but the plan raised it: credited via raiseKey, never on a call
+    expect(detectNudges(["Fancy sorting the details by phone, or here is fine?"], m.values(), null, "text", "offer_call").map((n) => n.key)).toEqual(["offer_call"]);
+    expect(detectNudges(["Want me to call you to set up the rest?"], m.values(), null, "call")).toEqual([]);
+    expect(tapbackReceptivity({ tapback: "thumbsUp" })).toMatchObject({ receptivity: 9, signal: "accepted" });
+    expect(tapbackReceptivity({ tapback: "heart" })?.receptivity).toBe(9);
+    expect(tapbackReceptivity({ emoji: "👍" })?.receptivity).toBe(9);
+    expect(tapbackReceptivity({ tapback: "thumbsDown" })).toMatchObject({ receptivity: 2, signal: "declined" });
+    expect(tapbackReceptivity({ tapback: "haha" })).toBeNull();
+    expect(tapbackReceptivity({ emoji: "🎉" })).toBeNull();
+    expect(tapbackGlyph({ tapback: "heart" })).toBe("❤️");
+  });
   it("Gmail counts only by its own words (or the link card): task talk while Gmail is next is not a nudge", () => {
     expect(detectNudges(["Want me to draft a cancellation letter you can send yourself?"], m.values(), "gmail", "text")).toEqual([]);
     expect(detectNudges(["Want me to look through your inbox for the contract?"], m.values(), "gmail", "text").map((n) => n.key)).toEqual(["connect_gmail"]);
@@ -312,8 +331,9 @@ describe("ON MY MIND block", () => {
     // asked first (short, and it stops a re-ask), then eligible by priority, then snoozed
     expect(lines[1]).toMatch(/^- name_agent: asked, waiting for their reaction/);
     expect(lines[2]).toMatch(/^- learn_need: eligible now · one concrete thing/);
-    expect(lines[3]).toMatch(/^- connect_gmail: eligible now · raised 1× \(last: so I can find the membership email\?\) → 3\/10 "changed the subject" · try a different angle: /);
-    expect(lines[4]).toMatch(/^- done: get_name · dropped, never again: followup_landlord \(0\/10\)$/);
+    expect(lines[3]).toBe("- offer_call: eligible now · offer one quick call to set up the rest");
+    expect(lines[4]).toMatch(/^- connect_gmail: eligible now · raised 1× \(last: so I can find the membership email\?\) → 3\/10 "changed the subject" · try a different angle: /);
+    expect(lines[5]).toMatch(/^- done: get_name · dropped, never again: followup_landlord \(0\/10\)$/);
     expect(block.length).toBeLessThanOrEqual(ON_MY_MIND_MAX_CHARS + 120);
     // on a call the text-only intention is not listed
     expect(onMyMindBlock(m.values(), "call", 4, T0)).not.toContain("name_agent");
@@ -321,14 +341,16 @@ describe("ON MY MIND block", () => {
   });
   it("with a plan, exactly one line says raise now and every other eligible line says why it waits", () => {
     const m = fold([...seed(), ev({ key: "followup_landlord", op: "open", actor: "agent", payload: { goal: "ask if the landlord replied" } })]);
-    const block = onMyMindBlock(m.values(), "text", 1, T0, { raise: "get_name", holds: { connect_gmail: "after the need, as the means to it", name_agent: "text only, after the first useful result" } });
+    const block = onMyMindBlock(m.values(), "text", 1, T0, { raise: "get_name", holds: { offer_call: "after the need, as the means to it", connect_gmail: "after the need, as the means to it", name_agent: "text only, after the first useful result" } });
     const lines = block.split("\n");
     expect(lines[0]).toMatch(/"raise now"/);
     expect(lines[1]).toBe("- get_name: raise now · learn what to call them");
     expect(lines[2]).toBe("- learn_need: not now (one ask at a time) · one concrete thing to take off their plate");
-    expect(lines[3]).toBe("- connect_gmail: not now (after the need, as the means to it) · connect Gmail (read-only) as the way to do the task");
-    expect(lines[4]).toBe("- name_agent: not now (text only, after the first useful result) · learn what they'd like to call me");
+    expect(lines[3]).toBe("- offer_call: not now (after the need, as the means to it) · offer one quick call to set up the rest");
+    expect(lines[4]).toBe("- connect_gmail: not now (after the need, as the means to it) · connect Gmail (read-only) as the way to do the task");
+    // priority 5 twice (name_agent, the ad-hoc follow-up): ties break by key
     expect(lines[5]).toBe("- followup_landlord: not now (one ask at a time) · ask if the landlord replied");
+    expect(lines[6]).toBe("- name_agent: not now (text only, after the first useful result) · learn what they'd like to call me");
     expect(block.match(/raise now/g)).toHaveLength(2);
     expect(block).not.toContain("eligible now");
     // the raised item carries the next angle; the ones that wait do not

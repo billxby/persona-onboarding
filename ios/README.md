@@ -1,5 +1,12 @@
 # Persona App Clip (native scaffold)
 
+> Revised 2026-09-27: the clip is now the app's **onboarding**, not a tour (DESIGN §19). The web wizard in
+> `src/app/clip/ClipOnboarding.tsx` (welcome → three value screens → your name → a name for Persona → Google → the
+> call offer → done) is the reference for the native screens; its copy is the `onboarding` block of
+> `clip_content.json`, and it writes each answer to `POST <base>/api/clip/answer` and resumes from
+> `GET <base>/api/clip/state`. The SwiftUI files below still show the earlier tour and demo and have not been
+> updated to the wizard yet.
+
 `ios/PersonaClip/` is the SwiftUI source for the "Meet your Persona" App Clip: a scrollable tour of
 what Persona can do, the wristband, the products and how to get them, and a preview of the full
 experience. It compiles (see "Type-check" below) but there is no Xcode project in this repo yet,

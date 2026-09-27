@@ -70,6 +70,20 @@ describe("output guard: pacing (the reply may ask only what the plan raises)", (
     expect(v?.issue).toMatch(/already Maya/);
   });
 
+  it("the call offer passes only when the plan raises it; after a chosen channel it is never offered", () => {
+    const withNeed = base({ mode: "main", user_name: "Maya", need: "cancel gym" });
+    // the plan raises offer_call right after the need: the question passes
+    expect(localChecks({ session: withNeed, beliefs: [], bubbles: ["On it, Maya.", "Want me to call you to set up the rest? Two minutes, or we keep going here."], mind: mindWith([]), now: NOW })).toBeNull();
+    // they already chose text (a no or a hangup): never again
+    const v = localChecks({ session: { ...withNeed, channel_pref: "text" }, beliefs: [], bubbles: ["Want me to give you a quick call?"], mind: mindWith([]), now: NOW });
+    expect(v?.issue).toMatch(/prefer text.*Never offer a call/);
+    // the plan is on something else: the offer is dropped from the reply
+    const early = localChecks({ session: base({ user_name: "Maya" }), beliefs: [], bubbles: ["Want me to call you to set up the rest?"], mind: mindWith([]), now: NOW });
+    expect(early?.issue).toMatch(/call offer is not what to raise now/);
+    // "what should I call you?" is the name ask, not a call offer
+    expect(localChecks({ session: base(), beliefs: [], bubbles: ["Hey!", "What should I call you?"], mind: mindWith([]), now: NOW })).toBeNull();
+  });
+
   it("a declined Gmail that is still resting is not offered again, and a settled agent name is not asked again", () => {
     const gmailNo = mindWith([
       { id: 10, key: "connect_gmail", op: "nudge", actor: "agent", turn: 1, payload: { approach: "sent the Connect Gmail link card" } },

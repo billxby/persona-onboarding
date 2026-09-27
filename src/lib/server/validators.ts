@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TAPBACK_KINDS } from "@/lib/shared/types";
 
 /**
  * Input validation for every tool the model can call (DESIGN.md §8.1). The
@@ -48,6 +49,8 @@ export const explainInput = z.object({ subject: z.string().min(1).max(60), predi
 export const graduateInput = z.object({ reason: z.string().min(1).max(200).describe("Why now: value delivered | user wants to get going | skip all") });
 export const switchChannelInput = z.object({ to: z.enum(["call", "text"]) });
 export const endCallInput = z.object({ reason: z.string().min(1).max(120).describe("done | user asked | switching to text | silence") });
+/** react(tapback): the six iMessage tapbacks, always on the user's last message. */
+export const reactInput = z.object({ tapback: z.enum(TAPBACK_KINDS).describe("heart | thumbsUp | thumbsDown | haha | exclaim | question") });
 
 // ---------------------------------------------------------------------------
 // word lists

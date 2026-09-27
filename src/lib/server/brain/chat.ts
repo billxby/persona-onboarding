@@ -1,16 +1,18 @@
 import { generateText, isStepCount, tool, type ModelMessage, type SystemModelMessage, type ToolSet } from "ai";
-import { detectNudges } from "@/lib/memory/intentions";
+import { detectNudges, OFFER_CALL_KEY, tapbackGlyph } from "@/lib/memory/intentions";
 import { ensureMind, mindFor, recordNudge } from "@/lib/memory/mind";
 import type { Belief, ChatEvent, ChatTrigger, Intention, MessageRow, SessionRow, SlotName, ToolResult } from "@/lib/shared/types";
 import { detectAddressedName, looksLikeCallRequest, looksLikeSkip, questionsIn, splitBubbles, stripMarkdown, typingDelayMs, isHello, OPENER_ASK, OPENER_CARD_LINE, OPENER_INTRO } from "@/lib/shared/text";
 import { sleep } from "@/lib/utils";
+import { recordCallOfferAnswer } from "../callOffer";
+import { clipCapture, clipClosedHint } from "../clipAnswer";
 import { env } from "../env";
 import { markGmail } from "../gmail/oauth";
 import { activeBeliefs, detectDrop, DROP_COPY, insertEvent, insertMessage, listEvents, listMessages, recentThread } from "../messages";
 import * as promptMod from "../prompt";
 import { fastModel, textModel } from "../providers";
 import { acquireReplyLock, getSession, patchSession, releaseReplyLock } from "../session";
-import { bumpAttempt, isGraduated, nextBestAsk, pushQuestion, turnOf } from "../state";
+import { askPlan, bumpAttempt, isGraduated, nextBestAsk, pushQuestion, turnOf } from "../state";
 import { assessReactions } from "./receptivity";
 import { TOOL_DEFS } from "../tools/definitions";
 import { insertAppClipCard, runTool } from "../tools/run";
@@ -101,6 +103,9 @@ function triggerHint(trigger: ChatTrigger, reason: string | undefined, session: 
       return "The call ended because the user went silent. One short line: no pressure, you're here in text, plus one easy next step. Never offer a call again unless asked.";
     case "clip_demo":
       return "Demo from the App Clip: the user has no name yet and this is a one-turn preview. Do the task on the demo inbox NOW (recent_emails / search_gmail / draft_reply), no questions about their name or Gmail, no card sending. End with one short line inviting them to continue in Messages.";
+    case "tapback":
+      return `They answered your last question with a tapback (the reaction is in the thread${reason ? `; it was read against ${reason}` : ""}). Treat it as their answer and act on it in ONE short bubble, no re-ask: a thumbs-up or heart on the call offer means call switch_channel("call") now and say you're calling; a thumbs-down means drop it and carry on here. On any other ask, a thumbs-up is a yes to what you proposed.`;
+    // clip_closed: the hint is built from the capture by runTextTurn (see clipClosedHint)
     default:
       return null;
   }
@@ -118,6 +123,10 @@ function syntheticEvent(trigger: ChatTrigger, reason: string | undefined, sessio
       return "(system event: the user reopened the chat after a break.)";
     case "silence_end":
       return "(system event: the call ended after the user went silent.)";
+    case "clip_closed":
+      return `(system event: the user closed the Persona App Clip${reason === "ringing" ? "; you are ringing them now" : ""}. Continue here.)`;
+    case "tapback":
+      return "(system event: the user reacted to your last message.)";
     default:
       return "(system event: continue.)";
   }
@@ -144,6 +153,13 @@ function rowToText(row: MessageRow): { role: "user" | "assistant"; text: string 
       return { role: "assistant", text: `[left a voicemail: ${row.payload?.transcript ?? row.content ?? ""}]` };
     case "call_log":
       return { role: "assistant", text: `[${row.content ?? "call ended"}]` };
+    case "tapback": {
+      // reactions reach the model as what they are: an answer without words (theirs) or a nod (ours)
+      if (row.payload?.added === false) return null;
+      const glyph = tapbackGlyph({ tapback: row.payload?.tapback, emoji: row.payload?.emoji });
+      const by = row.payload?.by ?? (row.role === "user" ? "user" : "assistant");
+      return by === "user" ? { role: "user", text: `[reacted ${glyph} to your last message]` } : { role: "assistant", text: `[reacted ${glyph} to their message]` };
+    }
     default:
       return null;
   }
@@ -229,6 +245,34 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
       await finish();
       return;
     }
+
+    // The App Clip closed: the thread takes the relay (DESIGN §19). Everything the clip captured is already on
+    // the session (each answer was written the moment it was given); here we only tidy up and brief the model.
+    if (trigger === "clip_closed") {
+      const cap = await clipCapture(session_id);
+      if (session.gmail_status === "pending" && cap.gmail_started_in_clip) {
+        // Google consent started in the clip and never came back: don't freeze the plan on `pending`
+        await markGmail(session_id, "failed", null, { reason: "clip_abandoned" });
+        session = (await getSession(session_id)) ?? session;
+      }
+      const captured = cap.answered.length + cap.skipped.length > 0 || !!cap.call_offer || cap.gmail_started_in_clip;
+      if (!captured) {
+        // opened and closed, nothing set up: no spurious bubble; the opener's question stands
+        await finish();
+        return;
+      }
+      let ringing = false;
+      if (cap.call_offer === "yes" && session.call_state === "idle" && session.channel_pref !== "text") {
+        const r = await runTool({ session, channel: "text" }, "switch_channel", { to: "call" });
+        session = r.session;
+        ringing = !!r.effects.ring;
+        emit({ type: "tool", name: "switch_channel", ok: r.result.ok, ring: r.effects.ring, next_best_ask: r.result.next_best_ask });
+      }
+      await llmTurn(session, trigger, ringing ? "ringing" : undefined, emit, [clipClosedHint(session, cap, ringing)]);
+      await finish();
+      return;
+    }
+
     await llmTurn(session, trigger, reason, emit);
     await finish();
   } catch (e) {
@@ -245,7 +289,7 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
 const slotEmpty = (s: SessionRow, slot: SlotName) =>
   slot === "user_name" ? !s.user_name : slot === "need" ? !s.need : slot === "gmail" ? s.gmail_status === "none" : !s.agent_name;
 
-async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string | undefined, emit: Emit): Promise<void> {
+async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string | undefined, emit: Emit, extraHints: string[] = []): Promise<void> {
   const session_id = session.id;
   const thread = await recentThread(session_id, { n: 14, channels: ["text", "call"] });
   const firstReply = !thread.some((m) => m.role === "assistant");
@@ -266,15 +310,26 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
     console.warn("[chat] mind unavailable:", e instanceof Error ? e.message : e);
     return [] as Intention[];
   });
+  const hints: string[] = [...extraHints];
   if (trigger === "user" && lastUserText && mind.some((r) => r.status === "asked")) {
-    mind = (await assessReactions({ session, mind, userText: lastUserText, channel: "text" })).mind;
+    const offerWasAsked = mind.some((r) => r.key === OFFER_CALL_KEY && r.status === "asked");
+    const assessed = await assessReactions({ session, mind, userText: lastUserText, channel: "text" });
+    mind = assessed.mind;
+    // the one call offer settles on its answer (DESIGN §1.7): a yes rings (the model calls switch_channel), a no is text for good
+    const offerRead = offerWasAsked ? assessed.assessed.find((a) => a.key === OFFER_CALL_KEY) : undefined;
+    if (offerRead && offerRead.read.receptivity >= 7 && !looksLikeCallRequest(lastUserText)) {
+      hints.push('They said yes to the call you offered: call switch_channel("call") now and say you\'re calling, nothing else.');
+    } else if (offerRead && offerRead.read.receptivity <= 2) {
+      session = await recordCallOfferAnswer(session, "no", { via: "chat", turn: turnOf(session) + 1, evidence_ref: "assessor:text" });
+      mind = await mindFor(session_id).catch(() => mind);
+    }
   }
 
   const beliefs = await activeBeliefs(session_id);
-  const nbaBefore = nextBestAsk(session, "text", mind);
+  const planBefore = askPlan(session, "text", mind);
+  const nbaBefore = planBefore.pick;
   const parts = buildParts(session, beliefs, mind);
 
-  const hints: string[] = [];
   const hint = triggerHint(trigger, reason, session);
   if (hint) hints.push(hint);
   if (trigger === "user" && lastUserText) {
@@ -401,7 +456,7 @@ async function llmTurn(session: SessionRow, trigger: ChatTrigger, reason: string
   // Which of my intentions did this reply raise? Mark them asked so next turn's reply gets scored.
   const thisTurn = turnOf(session) + 1;
   const fresh = await mindFor(session_id).catch(() => mind);
-  for (const n of detectNudges(bubbles, fresh, nbaBefore.slot, "text")) {
+  for (const n of detectNudges(bubbles, fresh, nbaBefore.slot, "text", planBefore.raise)) {
     if (fresh.find((r) => r.key === n.key)?.status === "asked") continue; // a tool (the link card) already logged it
     try {
       await recordNudge(session_id, { key: n.key, approach: n.approach, channel: "text", turn: thisTurn, actor: "agent", evidence_ref: "chat:bubbles" });

@@ -38,6 +38,9 @@ const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const NAME_ASKS = [/what should i call you/i, /what'?s your name/i, /your name\??$/i, /who am i (talking|speaking) (to|with)/i, /how should i address you/i];
 const NEED_ASKS = [/what (do you|would you like|can i) (want|need|help)/i, /one thing (you want|off your plate)/i, /what should (i|we) (tackle|start with|knock out)/i, /what can i (do|help)/i];
 const GMAIL_ASKS = [/connect (your )?gmail/i, /link (your )?gmail/i, /hook up (your )?(gmail|inbox)/i];
+/** An offer to call (not a reply to "call me"): only ever when the plan raises offer_call (DESIGN §1.7, §7). */
+// never "should I call you …": that is the name ask
+const CALL_OFFER_ASKS = [/\b(want|like) me to (call|ring|phone) you\b/i, /\bshall i (call|ring|phone) you\b/i, /\bgive you a (quick |short )?call\b/i, /\b(hop on|jump on|do) a (quick |short )?call\b/i, /\bquick call\b/i, /\bover the phone\b/i];
 const LEAKS = [/STATE \(never/i, /next_best_ask/i, /\bset_slot\b/, /\bsystem prompt\b/i, /WHAT I KNOW/];
 
 export function localChecks({ session, bubbles, mind, now = Date.now() }: GuardInput): GuardVerdict | null {
@@ -68,10 +71,19 @@ export function localChecks({ session, bubbles, mind, now = Date.now() }: GuardI
   const askedAgent = questions.some((q) => AGENT_ASKS.some((re) => re.test(q)));
   if (askedAgent && session.agent_name) return { ok: false, issue: `They already named you ${session.agent_name}. Don't ask again.`, source: "local" };
 
+  // The call offer is made once, by the plan (DESIGN §7); after a yes, a no or a hangup the channel is chosen (§1.7).
+  const offeredCall = questions.some((q) => CALL_OFFER_ASKS.some((re) => re.test(q)));
+  if (offeredCall && (session.channel_pref !== null || session.call_state !== "idle")) {
+    return { ok: false, issue: session.channel_pref === "text" ? "They prefer text (or already answered the call question). Never offer a call unless they ask for one." : "A call is already chosen or under way. Don't offer one.", source: "local" };
+  }
+
   // Pacing (DESIGN §13b): an ask whose intention is resting (snoozed after a cold reaction, or raised and still
   // unanswered) is not asked again now, unless the plan itself picked it (the need, when nothing can happen without one).
   if (mind) {
     const plan = askPlan(session, "text", mind, now);
+    if (offeredCall && plan.raise !== "offer_call") {
+      return { ok: false, issue: "You offered a call, but the call offer is not what to raise now (it is made once, right after the need). Drop that question and keep the rest.", source: "local" };
+    }
     const asked: Record<SlotName, boolean> = { user_name: askedName, need: askedNeed, gmail: askedGmail, agent_name: askedAgent };
     for (const slot of SLOTS) {
       if (slot === plan.pick.slot) continue;

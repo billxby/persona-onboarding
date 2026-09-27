@@ -20,8 +20,15 @@
   --color-glass-edge: var(--glass-edge);
   --color-ios-green: #34c759;
   --color-ios-red: #ff3b30;
+  /* the App Clip's onboarding (DESIGN §19): warm canvas, hairline borders, one dark pill; iMessage blue only inside mockups */
+  --color-clip-bg: var(--clip-bg);
+  --color-clip-ink: var(--clip-ink);
+  --color-clip-line: var(--clip-line);
+  --color-clip-card: var(--clip-card);
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  /* display face for the clip's headlines; the variable is set by next/font in the root layout */
+  --font-display: var(--font-clip-display), "Instrument Serif", Georgia, "Times New Roman", serif;
 }
 
 :root {
@@ -38,6 +45,10 @@
   --panel: #ffffff;
   --line: rgba(0, 0, 0, 0.1);
   --ink: #111111;
+  --clip-bg: #fffdfa;
+  --clip-ink: #1c1c1c;
+  --clip-line: #e2e1de;
+  --clip-card: #ffffff;
 }
 [data-theme="dark"] {
   --screen-bg: #000000;
@@ -53,6 +64,10 @@
   --panel: #1f1f23;
   --line: rgba(255, 255, 255, 0.12);
   --ink: #f2f2f5;
+  --clip-bg: #0e0e11;
+  --clip-ink: #f2f2f5;
+  --clip-line: rgba(255, 255, 255, 0.1);
+  --clip-card: #17171a;
 }
 
 /* the simulator stage behind the phone */
@@ -215,4 +230,39 @@ body {
     23px 23px;
   animation: ink-drift 3s linear infinite;
   opacity: 0.9;
+}
+
+/* ---------- the App Clip's onboarding ---------- */
+/* one dark pill, lit from the top (the only strong element on the warm canvas) */
+.clip-btn-primary {
+  background: linear-gradient(180deg, #3a3a3a 0%, #3a3a3a 52%, #2c2c2c 80%, #1f1f1f 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.clip-btn-primary:active {
+  filter: brightness(0.92);
+}
+.clip-btn-primary:disabled {
+  opacity: 0.35;
+}
+[data-theme="dark"] .clip-btn-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f2 100%);
+  color: #111;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+/* a white card on the warm canvas: hairline, 20px corners */
+.clip-card {
+  background: var(--clip-card);
+  border: 1px solid var(--clip-line);
+  border-radius: 20px;
+}
+/* the mock thread inside a card needs its own screen colour for bubble tails */
+.clip-thread {
+  --screen-bg: var(--clip-card);
+  --imsg-gray: rgba(0, 0, 0, 0.06);
+}
+[data-theme="dark"] .clip-thread {
+  --imsg-gray: rgba(255, 255, 255, 0.1);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { containsSlur, contentTokens, isProfane, validateName, validateNeed } from "@/lib/server/validators";
-import { toolJsonSchemas, TOOL_NAMES } from "@/lib/server/tools/definitions";
+import { TOOL_DEFS, toolJsonSchemas, TOOL_NAMES } from "@/lib/server/tools/definitions";
 
 describe("validateName", () => {
   it("accepts ordinary names and normalises casing", () => {
@@ -70,7 +70,9 @@ describe("contentTokens", () => {
 describe("toolJsonSchemas", () => {
   it("emits strict function schemas for the call channel without agent-text-only gaps", () => {
     const schemas = toolJsonSchemas("call");
-    expect(schemas.map((s) => s.name)).toEqual([...TOOL_NAMES]);
+    expect(schemas.map((s) => s.name)).toEqual(TOOL_NAMES.filter((n) => TOOL_DEFS[n].channels.includes("call")));
+    expect(schemas.map((s) => s.name)).not.toContain("react");
+    expect(toolJsonSchemas("text").map((s) => s.name)).toContain("react");
     for (const s of schemas) {
       expect(s.type).toBe("function");
       expect(s.parameters.type).toBe("object");

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reactToTapback } from "@/lib/server/brain/tapback";
 import { detectDrop, insertEvent, insertMessage } from "@/lib/server/messages";
 import { getSession, touchActivity } from "@/lib/server/session";
 import type { MessagePayload, PostMessageResponse } from "@/lib/shared/types";
@@ -14,7 +15,8 @@ const Body = z.object({
 
 /**
  * POST /api/messages — persist a user bubble (or tapback) immediately. The reply itself is
- * requested separately via POST /api/chat after the client-side debounce.
+ * requested separately via POST /api/chat after the client-side debounce. A tapback on the
+ * agent's last question is read as its answer (see brain/tapback.ts) and the response says so.
  */
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -36,7 +38,11 @@ export async function POST(req: Request) {
       payload: (payload ?? {}) as MessagePayload,
       channel: "text",
     });
-    const res: PostMessageResponse = { message, call_live: false };
+    const reaction = await reactToTapback(session, message).catch((e) => {
+      console.warn("[messages] tapback not read:", e instanceof Error ? e.message : e);
+      return {};
+    });
+    const res: PostMessageResponse = { message, call_live: false, ...reaction };
     return Response.json(res);
   }
 

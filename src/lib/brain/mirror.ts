@@ -29,7 +29,7 @@ function appClipFromPayload(p: MessageRow["payload"]): LinkPreview["appClip"] | 
   const verb = c.verb === "Open" || c.verb === "View" || c.verb === "Play" ? c.verb : undefined;
   return {
     appName: typeof c.app_name === "string" && c.app_name ? c.app_name : "Persona",
-    title: typeof c.title === "string" ? c.title : "Meet your Persona",
+    title: typeof c.title === "string" ? c.title : "Persona",
     subtitle: typeof c.subtitle === "string" ? c.subtitle : "",
     verb,
   };

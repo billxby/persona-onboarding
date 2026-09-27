@@ -1,19 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import { ClipContentSchema, type ClipContent } from "@/lib/shared/clip";
-import { isProd } from "@/lib/server/env";
+import { loadClipContent } from "@/lib/server/clipContent";
 
-let cached: ClipContent | null = null;
-
-/** Loads and validates data/clip_content.json (cached in production, re-read in dev). */
-export function loadClipContent(): ClipContent {
-  if (cached && isProd()) return cached;
-  const raw = fs.readFileSync(path.join(process.cwd(), "data", "clip_content.json"), "utf8");
-  const parsed = ClipContentSchema.parse(JSON.parse(raw));
-  cached = parsed;
-  return parsed;
-}
-
+/** GET /api/clip/content — the clip's copy (onboarding screens + tour), for the in-phone clip and the native scaffold. */
 export async function GET() {
   try {
     const content = loadClipContent();

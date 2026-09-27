@@ -1,4 +1,4 @@
-import { builtinForSlot, byPriority, eligibility, intentionForSlot, nextAngle, receptivityBand, type IntentionRecord, type MindPlan } from "@/lib/memory/intentions";
+import { builtinFor, builtinForSlot, byPriority, eligibility, intentionForSlot, nextAngle, OFFER_CALL_KEY, receptivityBand, type IntentionRecord, type MindPlan } from "@/lib/memory/intentions";
 import type { Intention, NextBestAsk, ServerChannel, SessionRow, SlotName } from "@/lib/shared/types";
 
 /** Pure helpers over the session row: what to ask next, the STATE block, attempts and question history. */
@@ -65,24 +65,52 @@ export const HOLD_ONE_AT_A_TIME = "one ask at a time";
 export const HOLD_AFTER_NEED = "after the need, as the means to it";
 export const HOLD_AFTER_VALUE = "after the first useful result";
 export const HOLD_GMAIL_PENDING = "Gmail link pending";
+export const HOLD_AFTER_CALL_OFFER = "after the call offer";
+export const HOLD_CALL_OFFER_ASKED = "waiting on the call offer";
+export const HOLD_CHANNEL_CHOSEN = "they already chose a channel";
+/** The call offer is made at most this many times (a second, lighter try only after the first was merely ignored). */
+export const CALL_OFFER_MAX_NUDGES = 2;
+
+/** The one first-time call offer (DESIGN §7): the pick's hint when it is the thing to raise. */
+export const CALL_OFFER_HINT =
+  'They just said what they want done. Offer ONE thing, lightly: a quick call to set up the rest by voice, or keep going here. One question, no pressure. Yes → call switch_channel("call") and say you\'re calling now. No → call intention(outcome, offer_call, 2) and carry on here.';
 
 /**
  * What to ask next, and what waits. `mind` (the intentions projection) makes it receptivity-aware:
  * a slot whose intention is asked, snoozed or done is never the pick, nothing is ever retired by the
  * attempts counters, a forgotten need comes back in main mode, and a Gmail that was declined earlier
- * returns once its intention is eligible again (main mode only, as the way to do the task).
+ * returns once its intention is eligible again (main mode only, as the way to do the task). The call
+ * offer (`offer_call`, no slot) is raised once, right after the need and before Gmail, in text only,
+ * and never once a channel is chosen (`channel_pref` set: a yes, a no, or a hangup).
  */
 export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, now: number = Date.now()): AskPlan {
   const holds: Record<string, string> = {};
+  const holdKey = (key: string, why: string) => {
+    if (!(key in holds)) holds[key] = why;
+  };
   const hold = (slot: SlotName, why: string) => {
     const key = builtinForSlot(slot)?.key;
-    if (key && !(key in holds)) holds[key] = why;
+    if (key) holdKey(key, why);
   };
-  const finish = (pick: NextBestAsk): AskPlan => withAdHoc(s, channel, mind, now, pick, holds);
+  const finish = (pick: NextBestAsk, raise?: string): AskPlan => withAdHoc(s, channel, mind, now, pick, holds, raise);
+
+  // the call offer: one built-in without a slot, paced like the others
+  const offer = mind ? [...mind].find((r) => r.key === OFFER_CALL_KEY) : undefined;
+  const offerLive = !!offer && (offer.status === "open" || offer.status === "asked");
+  const channelChosen = s.channel_pref !== null || s.call_state !== "idle";
+  const offerAsked = offerLive && offer!.status === "asked" && channel === "text" && !channelChosen;
+  const offerNow =
+    offerLive && offer!.status === "open" && channel === "text" && !!s.need && !channelChosen && offer!.nudges < CALL_OFFER_MAX_NUDGES && eligibility(offer!, turnOf(s), now).eligible;
+  if (offerLive && !offerNow && !offerAsked) holdKey(OFFER_CALL_KEY, channelChosen ? HOLD_CHANNEL_CHOSEN : !s.need ? HOLD_AFTER_NEED : offer!.nudges >= CALL_OFFER_MAX_NUDGES ? "offered twice, let it rest" : eligibility(offer!, turnOf(s), now).why);
 
   if (s.gmail_status === "pending") {
     for (const slot of SLOTS) hold(slot, HOLD_GMAIL_PENDING);
+    holdKey(OFFER_CALL_KEY, HOLD_GMAIL_PENDING);
     return finish({ slot: null, hint: "Gmail connect is pending. Wait for it, do not re-ask. Keep helping with the need meanwhile." });
+  }
+  if (offerAsked) {
+    for (const slot of SLOTS) hold(slot, HOLD_CALL_OFFER_ASKED);
+    return finish({ slot: null, hint: "You just offered a call; wait for their answer. A yes means switch_channel(\"call\"); a no means you carry on here and never offer again. Help with anything else they said meanwhile." });
   }
   const gate = (slot: SlotName) => slotGate(s, slot, mind, now);
   const gName = gate("user_name");
@@ -131,6 +159,11 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
             : `Ask for one thing to take off their plate this week. Paraphrase it back when they answer.${receptivityNote(gNeed.rec)}`,
       });
     }
+    // the need is known: one call offer before Gmail (text only, once)
+    if (offerNow) {
+      if (gmailMissing) hold("gmail", HOLD_AFTER_CALL_OFFER);
+      return finish({ slot: null, hint: `${CALL_OFFER_HINT}${receptivityNote(offer!)}` }, OFFER_CALL_KEY);
+    }
     // Gmail only as the way to do THEIR task: never before a need is known
     if (gmailMissing && (s.need || !mind)) {
       return finish({ slot: "gmail", hint: `Frame Gmail as the way to do THAT task, call request_gmail_connect, then wait.${receptivityNote(gGmail.rec)}` });
@@ -169,6 +202,13 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
     if (agentSoft) hold("agent_name", HOLD_ONE_AT_A_TIME);
     return finish({ slot: "need", hint: `No need on file: ask for one concrete thing to take off their plate, then act on it.${receptivityNote(gNeed.rec)}` });
   }
+  // right after the need, before Gmail: the one call offer (DESIGN §7)
+  if (offerNow) {
+    if (gmailSoft) hold("gmail", HOLD_AFTER_CALL_OFFER);
+    if (nameSoft) hold("user_name", HOLD_ONE_AT_A_TIME);
+    if (agentSoft) hold("agent_name", HOLD_ONE_AT_A_TIME);
+    return finish({ slot: null, hint: `${CALL_OFFER_HINT}${receptivityNote(offer!)}` }, OFFER_CALL_KEY);
+  }
   if (gmailSoft && (s.need || !mind)) {
     if (nameSoft) hold("user_name", HOLD_ONE_AT_A_TIME);
     if (agentSoft) hold("agent_name", HOLD_ONE_AT_A_TIME);
@@ -194,10 +234,11 @@ export function askPlan(s: SessionRow, channel: ServerChannel, mind?: MindView, 
  * The agent's own follow-ups (intentions without a slot) join the plan last: raised only when
  * nothing is to be collected, one at a time, top priority first.
  */
-function withAdHoc(s: SessionRow, channel: ServerChannel, mind: MindView | undefined, now: number, pick: NextBestAsk, holds: Record<string, string>): AskPlan {
-  let raise: string | null = pick.slot ? (builtinForSlot(pick.slot)?.key ?? null) : null;
+function withAdHoc(s: SessionRow, channel: ServerChannel, mind: MindView | undefined, now: number, pick: NextBestAsk, holds: Record<string, string>, raiseKey?: string): AskPlan {
+  let raise: string | null = raiseKey ?? (pick.slot ? (builtinForSlot(pick.slot)?.key ?? null) : null);
   if (mind) {
-    const adhoc = [...mind].filter((r) => r.slot === null && r.status === "open" && r.channels.includes(channel) && eligibility(r, turnOf(s), now).eligible).sort(byPriority);
+    // the built-in without a slot (the call offer) is paced by askPlan itself, never as an ad-hoc follow-up
+    const adhoc = [...mind].filter((r) => r.slot === null && !builtinFor(r.key) && r.status === "open" && r.channels.includes(channel) && eligibility(r, turnOf(s), now).eligible).sort(byPriority);
     for (const r of adhoc) {
       if (raise === null) {
         raise = r.key;

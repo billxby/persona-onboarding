@@ -10,11 +10,13 @@
  *
  * Backoff (pure): the receptivity band of the latest reaction sets a base wait
  * in assistant turns and, for cold reactions, a wall-clock floor; every extra
- * nudge doubles both. Sticky intentions (every built-in: name, need, Gmail,
- * agent name are core product asks) are never dropped, only backed off further
- * and further; a straight no to Gmail means "much later, from another angle",
- * not "never". Only ad-hoc follow-ups the agent opened itself can be dropped:
- * 0/10 drops one outright, three nudges averaging under 3/10 drop it too.
+ * nudge doubles both. Sticky intentions (the core product asks: name, need,
+ * Gmail, agent name) are never dropped, only backed off further and further; a
+ * straight no to Gmail means "much later, from another angle", not "never".
+ * The one built-in that is not sticky is the call offer (`offer_call`): DESIGN
+ * §1.7 makes a no final, so it settles on the first clear answer. Ad-hoc
+ * follow-ups the agent opened itself can be dropped: 0/10 drops one outright,
+ * three nudges averaging under 3/10 drop it too.
  */
 import type { Intention, IntentionEvent, IntentionPayload, IntentionStatus, ReceptivitySignal, ServerChannel, SlotName } from "@/lib/shared/types";
 
@@ -40,10 +42,11 @@ export const EPOCH = "1970-01-01T00:00:00.000Z";
 
 export interface BuiltinIntention {
   key: string;
-  slot: SlotName;
+  /** the session slot this ask fills; `null` for an ask that is not a slot (the call offer) */
+  slot: SlotName | null;
   goal: string;
   priority: number;
-  /** core product ask: never auto-dropped, only backed off (all built-ins) */
+  /** core product ask: never auto-dropped, only backed off */
   sticky: boolean;
   channels: ServerChannel[];
   /** a question bubble matching this means the agent raised it */
@@ -74,10 +77,23 @@ export const BUILTIN_INTENTIONS: BuiltinIntention[] = [
     angles: ["open question: one thing off their plate this week", "three concrete options: inbox cleanup, cancelling subscriptions, booking an appointment", "the smallest start: want me to begin with the inbox?"],
   },
   {
+    // One first-time offer, once the need is known and only in text (DESIGN §7): a yes rings the phone, a no or a
+    // hangup means text for good (§1.7), so this is the one built-in that settles instead of backing off.
+    key: "offer_call",
+    slot: null,
+    goal: "offer one quick call to set up the rest",
+    priority: 3,
+    sticky: false,
+    channels: ["text"],
+    // never a bare "call you": "what should I call you?" is the name ask
+    cue: /\b(want|like) me to (call|ring|phone) you\b|\bgive you a (quick |short )?call\b|\bhop on (a|the) (quick )?call\b|\bquick call\b|\bover the phone\b|\bby voice\b|\bwant (me to|a) call\b|\bcall you (back|now|to set)\b|\btwo.minute call\b/i,
+    angles: ["light: want me to call you to set up the rest? two minutes, or we keep going here", "tie it to the task: faster to sort the details by voice, or here is fine too"],
+  },
+  {
     key: "connect_gmail",
     slot: "gmail",
     goal: "connect Gmail (read-only) as the way to do the task",
-    priority: 3,
+    priority: 4,
     sticky: true,
     channels: BOTH,
     cue: /\b(gmail|inbox|your email|read-?only|connect)\b/i,
@@ -93,7 +109,7 @@ export const BUILTIN_INTENTIONS: BuiltinIntention[] = [
     key: "name_agent",
     slot: "agent_name",
     goal: "learn what they'd like to call me",
-    priority: 4,
+    priority: 5,
     sticky: true,
     channels: ["text"],
     cue: /what (should|would|do) you (like to |want to )?call me|name for me|give me a name|call me (something|anything|whatever)|rename me/i,
@@ -103,6 +119,7 @@ export const BUILTIN_INTENTIONS: BuiltinIntention[] = [
 
 export const builtinFor = (key: string) => BUILTIN_INTENTIONS.find((b) => b.key === key);
 export const builtinForSlot = (slot: SlotName) => BUILTIN_INTENTIONS.find((b) => b.slot === slot);
+export const OFFER_CALL_KEY = "offer_call";
 
 /** The `open` payload that seeds a built-in. */
 export function seedPayload(b: BuiltinIntention): IntentionPayload {
@@ -469,9 +486,11 @@ const asking = (bubbles: string[]) => bubbles.map((b) => b.replace(/\s+/g, " ").
  * intention's slot (the model was told to ask it, however it framed it). Gmail is the exception:
  * its ask is the link card (request_gmail_connect logs that nudge itself) or explicit words; any
  * other question while Gmail is next is task talk, and counting it would inflate the backoff.
- * The whole bubble is the approach (it carries the framing). One nudge per key.
+ * The whole bubble is the approach (it carries the framing). One nudge per key. `raiseKey` is the
+ * intention the plan told the model to raise this turn; a slot-less one (the call offer) gets the
+ * credit the same way a slot does, so a question phrased outside its cue still counts.
  */
-export function detectNudges(bubbles: string[], mind: Iterable<IntentionRecord>, nbaSlot: SlotName | null, channel: ServerChannel): DetectedNudge[] {
+export function detectNudges(bubbles: string[], mind: Iterable<IntentionRecord>, nbaSlot: SlotName | null, channel: ServerChannel, raiseKey: string | null = null): DetectedNudge[] {
   const questions = asking(bubbles);
   if (questions.length === 0) return [];
   // a question that plainly asks for another built-in (the name, when the plan said need) belongs to that one, never to the plan's slot
@@ -483,7 +502,8 @@ export function detectNudges(bubbles: string[], mind: Iterable<IntentionRecord>,
     const b = builtinFor(rec.key);
     const hit = b ? questions.find((q) => b.cue.test(q)) : undefined;
     const viaNba = nbaSlot !== null && rec.slot === nbaSlot && rec.slot !== "gmail" && !cued.has(questions[0]) ? questions[0] : undefined;
-    const approach = hit ?? viaNba;
+    const viaRaise = raiseKey !== null && rec.key === raiseKey && rec.slot === null && !cued.has(questions[0]) ? questions[0] : undefined;
+    const approach = hit ?? viaNba ?? viaRaise;
     if (!approach || seen.has(rec.key)) continue;
     seen.add(rec.key);
     out.push({ key: rec.key, approach: approach.slice(0, 140) });
@@ -495,6 +515,38 @@ export interface ReceptivityRead {
   receptivity: number;
   signal: ReceptivitySignal;
   note: string;
+}
+
+/**
+ * A tapback on the agent's last ask, read as a reaction: a heart or thumbs-up is a yes, a thumbs-down a
+ * no; the other glyphs (haha, !!, ?) and any other emoji say nothing about the ask and are not scored.
+ */
+export function tapbackReceptivity(kind: { tapback?: string | null; emoji?: string | null }): ReceptivityRead | null {
+  const t = kind.tapback ?? "";
+  const e = kind.emoji ?? "";
+  if (t === "heart" || t === "thumbsUp" || /^(👍|❤️|❤|🔥|✅|🙌|💯|👌)/.test(e)) return { receptivity: 9, signal: "accepted", note: `tapback: ${t || e}` };
+  if (t === "thumbsDown" || /^(👎|❌|🙅)/.test(e)) return { receptivity: 2, signal: "declined", note: `tapback: ${t || e}` };
+  return null;
+}
+
+/** The glyph iMessage shows for a tapback kind, for transcripts the model reads. */
+export function tapbackGlyph(kind: { tapback?: string | null; emoji?: string | null }): string {
+  switch (kind.tapback) {
+    case "heart":
+      return "❤️";
+    case "thumbsUp":
+      return "👍";
+    case "thumbsDown":
+      return "👎";
+    case "haha":
+      return "😂";
+    case "exclaim":
+      return "‼️";
+    case "question":
+      return "❓";
+    default:
+      return kind.emoji ?? "👍";
+  }
 }
 
 /** Model-free fallback read of a reply to something the agent raised. Coarse on purpose. */

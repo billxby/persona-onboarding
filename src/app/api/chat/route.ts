@@ -6,7 +6,8 @@ export const maxDuration = 60;
 
 const Body = z.object({
   session_id: z.string().uuid(),
-  trigger: z.enum(["user", "open", "call_ended", "dropped", "voicemail", "gmail_connected", "gmail_declined", "welcome_back", "silence_end"]).default("user"),
+  // clip_demo stays server-internal (POST /api/clip/demo runs it in-process)
+  trigger: z.enum(["user", "open", "call_ended", "dropped", "voicemail", "gmail_connected", "gmail_declined", "welcome_back", "silence_end", "clip_closed", "tapback"]).default("user"),
   reason: z.string().max(200).optional(),
 });
 

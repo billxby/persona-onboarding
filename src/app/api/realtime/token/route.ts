@@ -9,7 +9,7 @@ import { toolJsonSchemas } from "@/lib/server/tools/definitions";
 export const maxDuration = 30;
 
 /** Turn-detection settings shared by the mint and the browser session (the client's session.update overwrites the mint). */
-export const TURN_DETECTION = { silence_duration_ms: 500, prefix_padding_ms: 300 } as const;
+const TURN_DETECTION = { silence_duration_ms: 500, prefix_padding_ms: 300 } as const;
 
 /**
  * Mint a short-lived Realtime client secret bound to this session's prompt and tools (DESIGN §10.1).

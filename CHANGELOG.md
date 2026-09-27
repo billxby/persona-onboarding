@@ -322,3 +322,100 @@ Claude (`claude-sonnet-5` + `claude-haiku-4-5-20251001`):
   `followup_peak_fitness` intention for "remind me in a week". Four guard regenerations, all from pre-existing rules
   (two questions in one reply; a draft written inline as bubbles instead of `draft_reply`, cut mid-sentence; offering
   Gmail when it was already connected).
+
+
+## 13. The App Clip becomes the app's onboarding; the thread takes the relay (fifth commit, 2026-09-27)
+
+The first App Clip was a scrollable tour in an iframe under a "Persona · App Clip" bar, with a web nav that said
+"Open in Messages": a website inside the phone that collected nothing. It is now what an App Clip is on a real
+iPhone: the system card, then a full-screen app, and that app is Persona's onboarding, the way a mobile app onboards.
+Every answer lands on the session the moment it is given, and the thread picks up where the clip left off.
+
+- **The card** (`AppClipCard.tsx`) matches the iOS sheet: 2:1 header art (`public/clip/card-header.svg`, the loop
+  mark and two bubbles), icon, "Persona" / "Your personal assistant, in Messages", Open, the notifications note, and
+  the "Powered by Persona · App Store ›" footer. `APP_CLIP_CARD` and the card's `image_url` changed with it.
+- **The clip is a native view, not an iframe.** `AppClipRunner.tsx` plays the launch screen and mounts
+  `ClipOnboarding` directly (it fetches the copy from `GET /api/clip/content`); no bar, no `postMessage("*")`, fonts
+  and the phone's light/dark appearance inherit. The `/clip` web fallback renders the same component in a phone-width
+  column with no site chrome, so the two can never drift. `ClipExperience.tsx` and `TryIt.tsx` are gone;
+  `POST /api/clip/demo` stays for the native scaffold.
+- **The wizard** (`src/app/clip/ClipOnboarding.tsx`, primitives in `clipUi.tsx`, copy in
+  `data/clip_content.json` → `onboarding`): welcome → three value pages whose iMessage mockups arrive bubble by bubble
+  with typing dots → your name → a name for Persona (chips) → Google (Continue with Google, demo inbox, Not now) →
+  the call offer (Call me now / I'll text) → done (recap, Get the Persona app, Back to Messages). A hairline "Get the
+  Persona app · App Store" strip sits under every screen after the welcome. Slide transitions and springs via
+  `motion`, `prefers-reduced-motion` honoured. Look from poke.com: `#fffdfa` canvas (dark `#0e0e11`), Instrument
+  Serif headlines (`next/font/google`, variable `--font-clip-display` on `<html>`), system body text, `#e2e1de`
+  hairlines, 20 px cards, one dark pill (`.clip-btn-primary`); tokens `clip-*` in `globals.css`.
+- **Captured live.** `POST /api/clip/answer { session_id, step, value }` (`src/lib/server/clipAnswer.ts`) runs the
+  same `set_slot` the chat uses with `ToolContext.source = "clip"`: validation, `slot_set { via: "clip" }`, a
+  `memory_events` assert with the new source `clip` (trust 0.6, cap 0.9, same tier as a text reply), the intention
+  settled, the contact card for `agent_name` (it lands in the thread behind the clip). `"skip"` is a legal value for
+  every step: a form skip scores 3 ("not now"), not 1 like a spoken no; "Not now" on Google is `declined` with reason
+  `clip_skip` (scored 5). A rejected name comes back as `{ ok: false, error }` and the screen shows it. Every step
+  logs `app_clip_answer`. `GET /api/clip/state?sid=` returns `ClipState` so a reopened clip skips filled steps and
+  the Google screen can poll. Same bearer-`sid` trust as `/connect?sid=`.
+- **Google from the clip.** The Google screen opens `/api/oauth/google/start?sid=&via=clip` in a popup (the route
+  now records the Gmail nudge for `via=clip`) or connects the demo inbox (`POST /api/gmail/connect`, `via` logged);
+  the wizard learns the result from the popup's `persona:gmail` message and by polling the state. `ServerBrain` holds
+  Gmail replies while the clip is open (`clipOpen`), so nothing lands behind it; a consent started in the clip and
+  abandoned is marked `failed` (`clip_abandoned`, scored 4) when the clip closes, so `askPlan` never freezes on
+  `pending`.
+- **The relay.** New `ChatTrigger` `clip_closed` (also `tapback`; both added to the zod enum in `chat/route.ts`, which
+  had silently been narrower than the type). `Simulator` → `ServerBrain.onAppClipClosed()` → `requestReply`. Pre-steps
+  in `runTextTurn`: nothing captured → no bubble; call answered yes → the server runs `switch_channel("call")` and
+  streams the ring before the model speaks. Then one turn with `clipClosedHint()` built from the session row and the
+  capture (never from the client): name, agent name, Google, call; acknowledge, never re-ask, continue with
+  `next_best_ask`; "they left before the end" when partial. Seen live: "Bill, Jarvis it is 😄 good pairing. Now,
+  what's one thing I can take off your plate this week?"; after leaving at the name screen: "Hey Bill, welcome back
+  👋 What's one thing on your plate this week I can just take care of for you?".
+- **The call offer** (DESIGN §7.9, §13b): a fifth built-in intention `offer_call` (priority 3, text only, no slot,
+  **not sticky**: §1.7 makes a no final). `askPlan()` raises it once, right after the need and before Gmail, only in
+  text, never while a channel is chosen (`channel_pref` set) or a call is live; while `asked` everything else waits;
+  after a mere non-answer one more light try, never a third (`CALL_OFFER_MAX_NUDGES`). `recordCallOfferAnswer()`
+  (`src/lib/server/callOffer.ts`): yes → outcome 9, settled, `channel_pref = call`; no → 2, settled,
+  `channel_pref = text`; skip → 4, stays open. `switch_channel` settles it too. In chat the assessor's read of the
+  reply to the offer drives it (≥ 7 → the hint says call `switch_channel("call")`; ≤ 2 → recorded as no). The guard
+  rejects an offer to call when a channel is already chosen or when the plan did not raise it. `detectNudges` gained
+  `raiseKey` so a slot-less raise phrased outside its cue still gets the credit. Two regexes were caught by the tests
+  and fixed before landing: the offer's cue and the guard's pattern both matched "What should I call you?".
+  `graduate("skip all")` settles the offer as "text it is". No migration: the intention row plus `channel_pref`
+  carry it, and `ensureMind()` back-fills the new built-in on old sessions.
+- **Tapbacks as answers** (`src/lib/server/brain/tapback.ts`): a user tapback on the agent's most recent question
+  (👍 / ❤️ → 9, 👎 → 2; other glyphs logged, not scored) is recorded as the outcome of every `asked` intention, exactly
+  as a spoken reply would be; `POST /api/messages` returns `chat_trigger: "tapback"` and the browser asks for a turn
+  whose hint says the reaction is the answer. Tapback rows now reach the model's history (`[reacted 👍 to your last
+  message]`). New tool `react(tapback)` (text only): a tapback from the agent on the user's last bubble, rendered by
+  the existing mirror path, at most one per reply, never on a question. Seen live: 👍 on "what's one thing I can take
+  off your plate?" → "Love the enthusiasm, but I still need a target 😊 Pick one: …".
+- **Home page** honours `/?sid=` (the web wizard's "Start in Messages"): the session store resets to that id before
+  the brain boots; the param is dropped from the address bar.
+- Prompts (`PROMPT_VERSION 2026-09-27.1`): the one-time offer rule and tapbacks in `channel_text.md`, the offer's
+  place (after the need, before Gmail) in `policy_main.md`, the card described as the app's setup and "back from the
+  clip: use what they set up, never re-ask" in both policies. Every file was tightened to stay under the 1,500-token
+  budget with the extra ON MY MIND line (onboarding/text static prefix 4,232 chars; full prompt with a full mind
+  under 6,000).
+- `loadClipContent()` moved to `src/lib/server/clipContent.ts`, and `DEMO_EMAIL` / `TURN_DETECTION` became local to their routes: a route file may export only handlers, and `next build` had been failing on the latter since the voice work.
+- Docs: DESIGN §1.7, §2, §5, §6, §7.1/7.8–7.10, §8, §9, §11, §12, §13, §13b, §15, §17 and a rewritten §19
+  ("setup, not a brochure"); README App Clip section; `ios/README.md` notes the wizard as the reference (the SwiftUI
+  scaffold still shows the tour).
+
+Verified: typecheck, lint, 152 unit tests (new: five built-ins with only the offer non-sticky, the offer's cue vs
+the name ask, `raiseKey` credit, `tapbackReceptivity`, the offer raised after the need / held once a channel is
+chosen / waits while asked / one more try then rest / never an ad-hoc pick, the guard's call-offer rule, clip trust,
+`ClipAnswerSchema`, `callOfferAnswer`, `clipStateFrom`, `clipCaptureFrom`, `clipClosedHint`, tapback target and
+latest-burst resolution, `react` text-only in the tool schemas), and three live runs of `scripts/e2e-app-clip.mjs`
+against a dev server of this tree (Claude `claude-sonnet-5` + `claude-haiku-4-5-20251001`):
+- full: card → system card → launch → welcome → three value pages → "Bill" landed before the next screen → "Jarvis"
+  landed with the contact card row → demo inbox connected from the clip, no reply behind it → "I'll text" →
+  `channel_pref = text`, `offer_call` done → Back to Messages → relay used the name and the new name, re-asked
+  nothing, offered no call → all four asks `done` → 👍 tapback scored and answered → Contacts off = plain link →
+  `/clip` web fallback with no nav, Smart App Banner present, a reopened clip skipped straight to done, "Start in
+  Messages" carries the session.
+- `--leave-early`: closed at the name-for-Persona screen → relay greeted Bill by name and asked only the need;
+  `user_name` kept, `agent_name` empty on the server.
+- `--call`: "Call me now" → the done screen closed itself → the phone rang → `channel_pref = call`, `offer_call`
+  done.
+
+Not done, by design: the SwiftUI scaffold still renders the tour (the web wizard is its reference); `next/font`
+needs network at build time to fetch Instrument Serif (falls back to Georgia if it cannot).

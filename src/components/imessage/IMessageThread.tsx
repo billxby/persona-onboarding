@@ -43,7 +43,8 @@ export function IMessageThread({
   onOpenLink: (messageId: string, url: string) => void;
   /** The user tapped Open on an App Clip card: the clip now runs inside the phone. */
   onOpenAppClip?: (messageId: string, url: string) => void;
-  onCloseAppClip?: (messageId: string, url: string) => void;
+  /** The clip closed; `detail` says where (which screen) and whether it was finished. */
+  onCloseAppClip?: (messageId: string, url: string, detail?: Record<string, unknown>) => void;
   /** A plain link (no App Clip card) was tapped: open it in the in-phone Safari sheet. */
   onOpenInSafari?: (messageId: string, url: string) => void;
 }) {
@@ -246,9 +247,9 @@ export function IMessageThread({
           <AppClipRunner
             key={`runner-${runnerMessage.id}`}
             link={runnerLink}
-            onClose={() => {
+            onClose={(detail) => {
               setRunnerFor(null);
-              onCloseAppClip?.(runnerMessage.id, runnerLink.url);
+              onCloseAppClip?.(runnerMessage.id, runnerLink.url, detail);
             }}
           />
         )}
