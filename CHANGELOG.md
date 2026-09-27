@@ -534,3 +534,44 @@ the agent's name) and `--call` (the live voice run above).
 
 - Skip on the three value pages jumped out of the clip (it shared the ×'s handler). It now goes straight to the first
   setup step the session is still missing; only the × closes the clip. `--leave-early` in the e2e covers it.
+
+## 21. The call waits for the assistant to finish speaking (thirteenth commit, 2026-09-27)
+
+Reported: the call transcript runs ahead of what is being said, and the bot hangs up "when it hears no answer" right
+as it has barely finished speaking.
+
+- **What happened** (session `7933be70`, from `events` and the call transcript): a short line ended at 24 s and the
+  silence clock started. A tool call followed, then a long answer whose audio ran from about 27 s to 43 s. The clock
+  kept running under that audio: tier 1 fired at 30.8 s and tier 2 at 37.0 s while the assistant was still talking
+  (their check-ins queued right behind it), tier 3 at 44.9 s the moment it stopped, and the 4 s hard end cut the
+  goodbye at 49.8 s; the `end_call` tool result landed at 50.8 s, after the call was gone. The transcript was not the
+  trigger, but it looked that way: captions showed each line in full seconds before it was spoken, because the
+  Realtime API streams a response's transcript at generation speed while its audio plays in real time.
+- **Fix, three seams in `src/lib/voice/`:**
+  - `silence.ts`: assistant audio starting pauses the tiers; nothing fires while it talks. A check-in (the response
+    to a tier note) leaves the clock running, but the next tier waits at least 5 s after the check-in's audio ends;
+    any other assistant turn restarts the clock. If a check-in never comes, the next tier fires 10 s later at the
+    latest. The third unanswered check-in is the goodbye whatever the wall clock says.
+  - `ending.ts` (new `CallEnder`): every way the bot ends a call (the `end_call` tool, the goodbye fallback, tier 3)
+    now drops the line 500 ms after the goodbye's audio has actually ended. If nothing is playing it waits for the
+    goodbye to start (1.5 s after `end_call`, 6 s after tier 3), with a 15 s cap. The 4 s silence hard end is gone;
+    user speech cancels the goodbye-fallback timer.
+  - `captionPacer.ts` (new): assistant captions are revealed word by word at the measured speaking rate (14 chars/s
+    to start, recalibrated from each response's audio duration), anchored to `output_audio_buffer.started`, flushed
+    when the audio ends, frozen at what was heard on a barge-in; a caption turns final only once the line has been
+    said. The server still gets the whole transcript at `transcript.done` (goodbye detection, the mind).
+  - `realtimeTransport.ts`: `output_audio_buffer.stopped` is confirmed by the remote level meter going quiet for
+    250 ms (1.5 s at most) before the audio counts as ended; the meter samples continuously now.
+  - `server/tools/run.ts`: the `end_call` tool no longer flips `call_state` itself. It lands while the goodbye is
+    still playing, and closing the call there made the browser's real `call_ended` a few seconds later a no-op: no
+    "Call ended" bubble, no `call_ended` / `silence_end` text follow-up. The tool now only records the request
+    (`end_call` event, `channel_pref = text`) and tells the browser to hang up; `call.ts` closes the call once.
+- **Tests:** `tests/unit/captionPacer.test.ts` (8), `tests/unit/ending.test.ts` (7), four new `SilenceWatcher` cases
+  in `call.test.ts` (the long-answer bug, the 5 s gap, a missing check-in, the third unanswered check-in). 171 pass.
+- **Live check** (`scripts/e2e-silence.mjs`: headless Chromium against the dev server, a silent WAV as the mic,
+  session `34d14697`): the opener was spoken from 4.4 s to 8.9 s with the caption growing word by word and turning
+  final at the end; check-in at 16.1 s (6 s after the opener ended), text offer at 25.8 s (5 s after the check-in
+  ended), goodbye from 36.7 s to 41.1 s, call ended `silence` at 41.5 s, 0.4 s after its last word. That run also
+  showed the `end_call` ordering problem above (no call-log bubble, no follow-up); after the `run.ts` change a second
+  run (`03ee4c4b`) ended on silence at 45.5 s and the thread got the call-log bubble and the `silence_end` reply.
+- Docs: DESIGN §8.9 and §10.6, README "Voice".

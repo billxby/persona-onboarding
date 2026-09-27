@@ -1,7 +1,7 @@
 "use client";
 
 import { backgroundResult, OpenAIRealtimeWebRTC, RealtimeAgent, RealtimeSession, tool, type TransportEvent } from "@openai/agents/realtime";
-import type { CallEndReason, CaptionLine } from "@/lib/session/types";
+import type { CallEndReason } from "@/lib/session/types";
 import type {
   CallEventRequest,
   CallEventType,
@@ -13,6 +13,8 @@ import type {
   TranscriptTurn,
 } from "@/lib/shared/types";
 import { uid } from "@/lib/utils";
+import { CaptionPacer } from "./captionPacer";
+import { CallEnder } from "./ending";
 import { SilenceWatcher } from "./silence";
 import type { VoiceTransport, VoiceTransportHandlers } from "./types";
 
@@ -32,10 +34,21 @@ type TokenResponse = RealtimeTokenResponse & {
 type RawEvent = { type: string; item_id?: string; delta?: string; transcript?: string; response_id?: string; error?: unknown };
 
 const HEARTBEAT_MS = 5_000;
+/** the assistant said goodbye in words: end the call unless end_call lands within this (DESIGN §8.9) */
 const GOODBYE_GRACE_MS = 3_000;
-const END_GRACE_MS = 800;
-const END_AFTER_AUDIO_MAX_MS = 6_000;
-const SILENCE_HARD_END_MS = 4_000;
+/** a beat between the goodbye's last word and the line dropping */
+const END_TAIL_MS = 500;
+/** an end was requested while nothing was playing: how long to wait for the goodbye audio to start */
+const END_AWAIT_AUDIO_MS = 800;
+const END_CALL_AWAIT_AUDIO_MS = 1_500;
+const SILENCE_GOODBYE_AWAIT_MS = 6_000;
+/** whatever happens, the call ends this long after the end was requested */
+const END_MAX_MS = 15_000;
+/** the server's output_audio_buffer.stopped is confirmed by the remote track actually going quiet */
+const DRAIN_QUIET_LEVEL = 0.02;
+const DRAIN_QUIET_MS = 250;
+const DRAIN_MAX_MS = 1_500;
+const DRAIN_NO_METER_MS = 300;
 const METER_INTERVAL_MS = 66;
 
 const TIER_NOTES: Record<1 | 2 | 3, string> = {
@@ -54,6 +67,11 @@ async function postJson<T>(url: string, body: unknown, init: RequestInit = {}): 
  * OpenAI Realtime over browser WebRTC (DESIGN §10). Audio never touches our server: the browser
  * mints a short-lived key from /api/realtime/token and talks to OpenAI directly. Tools run here and
  * POST /api/tools/:name; transcripts, latency and lifecycle events go to /api/call/*.
+ *
+ * Timing is keyed to the audio, not the transcript (DESIGN §10.6): the transcript of a response
+ * arrives seconds before its audio has played. Captions are paced to the speech (CaptionPacer), the
+ * silence clock starts when the audio has actually ended (SilenceWatcher, confirmed by the remote
+ * level meter), and the call drops only after the goodbye has been heard (CallEnder).
  */
 export class RealtimeWebRTCTransport implements VoiceTransport {
   readonly kind = "openai-realtime";
@@ -66,21 +84,25 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   private audioEl: HTMLAudioElement | null = null;
   private audioCtx: AudioContext | null = null;
   private readonly silence: SilenceWatcher;
+  private readonly pacer: CaptionPacer;
+  private readonly ender: CallEnder;
 
   private alive = false;
   private ending = false;
   private assistantSpeaking = false;
   private userSpeaking = false;
   private speechStoppedAt: number | null = null;
-  private endRequested = false;
-  private endReason: CallEndReason = "bot_hangup";
   private silenceEnding = false;
+
+  /** server said the output buffer drained; waiting for the track to go quiet before calling the audio ended */
+  private drainingSince: number | null = null;
+  private quietSince: number | null = null;
+  private meterActive = false;
 
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private levelTimer: ReturnType<typeof setInterval> | null = null;
   private goodbyeTimer: ReturnType<typeof setTimeout> | null = null;
-  private endTimer: ReturnType<typeof setTimeout> | null = null;
-  private silenceEndTimer: ReturnType<typeof setTimeout> | null = null;
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Realtime item id → caption id */
   private captionIds = new Map<string, string>();
@@ -94,6 +116,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   constructor(opts: { sessionId: string; gmailPending?: boolean }) {
     this.sessionId = opts.sessionId;
     this.silence = new SilenceWatcher({ onTier: (tier) => this.onSilenceTier(tier) });
+    this.pacer = new CaptionPacer({ onReveal: (itemId, text, final) => this.revealAssistant(itemId, text, final) });
+    this.ender = new CallEnder({ finish: (reason) => this.finish(reason), tailMs: END_TAIL_MS, maxMs: END_MAX_MS });
     if (opts.gmailPending) this.silence.setGmailPending(true);
   }
 
@@ -259,7 +283,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     if (res.instructions) this.applyInstructions(res.instructions);
     const gmail = res.result?.state?.gmail;
     if (gmail) this.silence.setGmailPending(gmail === "pending");
-    if (res.end_call) this.requestEnd("bot_hangup");
+    // the goodbye is usually still playing (or about to start) when the tool call lands
+    if (res.end_call) this.requestEnd("bot_hangup", END_CALL_AWAIT_AUDIO_MS);
     return res.result;
   }
 
@@ -296,6 +321,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
         this.userSpeaking = true;
         this.speechStoppedAt = null;
         this.silence.onUserSpeechStart();
+        // whatever sounded like a goodbye, the user is talking: it wasn't one
+        this.clearGoodbyeTimer();
         this.handlers?.onUserSpeechStart?.();
         break;
       case "input_audio_buffer.speech_stopped":
@@ -303,20 +330,13 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
         this.speechStoppedAt = performance.now();
         break;
       case "output_audio_buffer.started":
-        this.assistantSpeaking = true;
-        if (this.speechStoppedAt != null) {
-          const ms = Math.round(performance.now() - this.speechStoppedAt);
-          this.speechStoppedAt = null;
-          this.handlers?.onLatency?.(ms);
-          void this.postCallEvent("latency", undefined, { ms });
-        }
+        this.onAudioStarted();
         break;
       case "output_audio_buffer.stopped":
+        this.onAudioBufferStopped();
+        break;
       case "output_audio_buffer.cleared":
-        this.assistantSpeaking = false;
-        this.handlers?.onRemoteLevel(0);
-        if (e.type === "output_audio_buffer.stopped" && !this.userSpeaking) this.silence.onAssistantAudioStopped();
-        if (this.endRequested) this.finish(this.endReason);
+        this.onAudioInterrupted();
         break;
       case "error":
         console.warn("[realtime] server error", e.error);
@@ -326,31 +346,87 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     }
   }
 
-  private appendAssistant(itemId: string, delta: string) {
-    let id = this.captionIds.get(itemId);
-    if (!id) {
-      id = uid();
-      this.captionIds.set(itemId, id);
-      this.assistantText.set(itemId, "");
-      this.handlers?.onCaption({ id, speaker: "assistant", text: "", final: false, ts: Date.now() });
+  /** The server began streaming a response's audio. Back-to-back responses share one buffer. */
+  private onAudioStarted() {
+    this.clearDrain();
+    const wasSpeaking = this.assistantSpeaking;
+    this.assistantSpeaking = true;
+    if (this.speechStoppedAt != null) {
+      const ms = Math.round(performance.now() - this.speechStoppedAt);
+      this.speechStoppedAt = null;
+      this.handlers?.onLatency?.(ms);
+      void this.postCallEvent("latency", undefined, { ms });
     }
-    const text = (this.assistantText.get(itemId) ?? "") + delta;
-    this.assistantText.set(itemId, text);
-    this.handlers?.onCaptionUpdate(id, { text });
+    if (wasSpeaking) return;
+    this.silence.onAssistantAudioStarted();
+    this.pacer.audioStarted();
+    this.ender.audioStarted();
+  }
+
+  /**
+   * The server's output buffer drained. The audio the user hears lags it by the network jitter buffer,
+   * so the end is called when the remote track has actually gone quiet (or shortly after, without a meter).
+   */
+  private onAudioBufferStopped() {
+    if (this.drainingSince != null) return;
+    if (!this.assistantSpeaking) {
+      this.onAudioEnded();
+      return;
+    }
+    this.drainingSince = performance.now();
+    this.quietSince = null;
+    this.drainTimer = setTimeout(() => this.onAudioEnded(), this.meterActive ? DRAIN_MAX_MS : DRAIN_NO_METER_MS);
+  }
+
+  /** The assistant has finished talking, for real. The silence clock starts here, and a requested end proceeds. */
+  private onAudioEnded() {
+    this.clearDrain();
+    this.assistantSpeaking = false;
+    this.handlers?.onRemoteLevel(0);
+    this.pacer.audioEnded();
+    this.ender.audioEnded();
+    if (!this.userSpeaking) this.silence.onAssistantAudioStopped();
+  }
+
+  /** The user barged in (server VAD cleared the buffer): the rest of the response was never heard. */
+  private onAudioInterrupted() {
+    this.clearDrain();
+    this.assistantSpeaking = false;
+    this.handlers?.onRemoteLevel(0);
+    this.pacer.audioInterrupted();
+    this.ender.audioEnded();
+    if (!this.userSpeaking) this.silence.onAssistantAudioStopped();
+  }
+
+  private clearDrain() {
+    if (this.drainTimer) clearTimeout(this.drainTimer);
+    this.drainTimer = null;
+    this.drainingSince = null;
+    this.quietSince = null;
+  }
+
+  private appendAssistant(itemId: string, delta: string) {
+    this.assistantText.set(itemId, (this.assistantText.get(itemId) ?? "") + delta);
+    this.pacer.push(itemId, delta);
   }
 
   private finishAssistant(itemId: string, transcript?: string) {
     const text = (transcript ?? this.assistantText.get(itemId) ?? "").trim();
+    this.pacer.complete(itemId, text);
+    // the server gets the whole line now (goodbye detection, the mind); the caption catches up at speech pace
+    if (text) void this.postTranscript([{ item_id: itemId, role: "assistant", text, final: true }]);
+  }
+
+  /** The pacer's view of an assistant line: as much as has been said so far, final once it has all been said. */
+  private revealAssistant(itemId: string, text: string, final: boolean) {
     let id = this.captionIds.get(itemId);
     if (!id) {
       id = uid();
       this.captionIds.set(itemId, id);
-      const line: CaptionLine = { id, speaker: "assistant", text, final: true, ts: Date.now() };
-      this.handlers?.onCaption(line);
-    } else {
-      this.handlers?.onCaptionUpdate(id, { text, final: true });
+      this.handlers?.onCaption({ id, speaker: "assistant", text, final, ts: Date.now() });
+      return;
     }
-    if (text) void this.postTranscript([{ item_id: itemId, role: "assistant", text, final: true }]);
+    this.handlers?.onCaptionUpdate(id, { text, final });
   }
 
   private userFinal(itemId: string, text: string) {
@@ -369,7 +445,7 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
       const res = await postJson<TranscriptResponse>("/api/call/transcript", body);
       if (!this.alive) return;
       if (res.patched && res.instructions) this.applyInstructions(res.instructions);
-      if (res.should_end && turns.some((t) => t.role === "assistant") && !this.endRequested) this.armGoodbyeTimer();
+      if (res.should_end && turns.some((t) => t.role === "assistant") && !this.ender.isRequested) this.armGoodbyeTimer();
     } catch (e) {
       console.warn("[realtime] transcript post failed", e);
     }
@@ -377,37 +453,41 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
 
   /** The assistant said goodbye: end the call unless an end_call tool call lands within 3 s (DESIGN §8.9). */
   private armGoodbyeTimer() {
-    if (this.goodbyeTimer) clearTimeout(this.goodbyeTimer);
+    this.clearGoodbyeTimer();
     this.goodbyeTimer = setTimeout(() => {
       this.goodbyeTimer = null;
-      if (this.alive && !this.endRequested) this.requestEnd("bot_hangup");
+      if (this.alive && !this.ender.isRequested) this.requestEnd("bot_hangup");
     }, GOODBYE_GRACE_MS);
   }
 
-  /** Hang up once the model's current audio has finished (or after a short grace if it isn't talking). */
-  private requestEnd(reason: CallEndReason) {
-    if (this.endRequested || !this.alive) return;
-    this.endRequested = true;
-    this.endReason = this.silenceEnding ? "silence" : reason;
+  private clearGoodbyeTimer() {
     if (this.goodbyeTimer) clearTimeout(this.goodbyeTimer);
     this.goodbyeTimer = null;
-    this.endTimer = setTimeout(() => this.finish(this.endReason), this.assistantSpeaking ? END_AFTER_AUDIO_MAX_MS : END_GRACE_MS);
+  }
+
+  /**
+   * Hang up once the assistant has been heard out: after the current audio ends, or, if nothing is
+   * playing yet, once the goodbye that is on its way has played (`awaitAudioMs` bounds that wait).
+   */
+  private requestEnd(reason: CallEndReason, awaitAudioMs = END_AWAIT_AUDIO_MS) {
+    if (!this.alive) return;
+    this.clearGoodbyeTimer();
+    this.ender.request(this.silenceEnding ? "silence" : reason, { awaitAudioMs });
   }
 
   private onSilenceTier(tier: 1 | 2 | 3) {
     if (!this.alive) return;
     void this.postCallEvent("silence_tier", undefined, { tier });
     this.injectSystem(TIER_NOTES[tier]);
+    // tier 3: the goodbye is generated in response to the note; the call ends once it has been spoken
     if (tier === 3) {
       this.silenceEnding = true;
-      this.silenceEndTimer = setTimeout(() => {
-        if (this.alive && !this.ending) this.finish("silence");
-      }, SILENCE_HARD_END_MS);
+      this.requestEnd("silence", SILENCE_GOODBYE_AWAIT_MS);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // audio level meter (remote stream)
+  // audio level meter (remote stream): the speaking indicator, and the proof that audio really ended
   // ---------------------------------------------------------------------------
 
   private attachMeter(stream: MediaStream) {
@@ -422,12 +502,22 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
       const buf = new Float32Array(analyser.fftSize);
       if (this.levelTimer) clearInterval(this.levelTimer);
       this.levelTimer = setInterval(() => {
-        if (!this.alive || !this.handlers || !this.assistantSpeaking) return;
+        if (!this.alive || !this.handlers) return;
         analyser.getFloatTimeDomainData(buf);
         let sum = 0;
         for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-        const rms = Math.sqrt(sum / buf.length);
-        this.handlers.onRemoteLevel(Math.min(1, rms * 6));
+        const level = Math.min(1, Math.sqrt(sum / buf.length) * 6);
+        this.meterActive = true;
+        if (this.assistantSpeaking) this.handlers.onRemoteLevel(level);
+        if (this.drainingSince != null) {
+          const now = performance.now();
+          if (level < DRAIN_QUIET_LEVEL) {
+            this.quietSince ??= now;
+            if (now - this.quietSince >= DRAIN_QUIET_MS) this.onAudioEnded();
+          } else {
+            this.quietSince = null;
+          }
+        }
       }, METER_INTERVAL_MS);
     } catch (e) {
       console.warn("[realtime] level meter unavailable", e);
@@ -459,8 +549,10 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   }
 
   private teardown() {
-    for (const t of [this.goodbyeTimer, this.endTimer, this.silenceEndTimer]) if (t) clearTimeout(t);
-    this.goodbyeTimer = this.endTimer = this.silenceEndTimer = null;
+    this.clearGoodbyeTimer();
+    this.clearDrain();
+    this.ender.cancel();
+    this.pacer.dispose();
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.levelTimer) clearInterval(this.levelTimer);
     this.heartbeatTimer = this.levelTimer = null;

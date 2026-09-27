@@ -193,7 +193,7 @@ Server validates every call. Results under 300 bytes. Every result includes `sta
 6. `remember(kind, content, source)`, `forget(belief_id)`, `explain(subject, predicate)`.
 7. `graduate(reason)`.
 8. `switch_channel(to)`.
-9. `end_call(reason)` (voice only). Server also ends the call if the assistant transcript contains a goodbye and no `end_call` arrived within 3 s.
+9. `end_call(reason)` (voice only). The line drops only after the current audio has been heard out (the tool call lands while the goodbye is still playing), never mid-sentence. Server also ends the call if the assistant transcript contains a goodbye and no `end_call` arrived within 3 s; user speech in that window cancels it.
 10. `send_app_clip(reason)`: the Persona App Clip card (§19), once per session.
 11. `react(tapback)` (text only): a tapback on the user's last message (`heart | thumbsUp | thumbsDown | haha | exclaim | question`); renders as a reaction, never a bubble.
 12. `intention(op, key, ...)`: the agent's own mind (§13b).
@@ -257,7 +257,7 @@ session.on("history_updated", (history) => saveTranscriptTurns(sessionId, histor
 3. Tools are `tool({ name, parameters, execute })`; `execute` POSTs to `/api/tools/:name` and returns the JSON result.
 4. Inject events mid-call (Gmail connected, user texted): `session.transport.sendEvent({ type: "conversation.item.create", item: { type: "message", role: "system", content: [{ type: "input_text", text }] } })` then `{ type: "response.create" }`. Confirm event shape in docs.
 5. Hangup: `session.close()`. Drop detection: WebRTC connection state, `pagehide` + `navigator.sendBeacon("/api/call/dropped")`, server heartbeat gap over 10 s. On drop: `call_state = dropped`, `channel_pref = text`, insert the resume text within 2 s: "Looks like we got cut off, Bill. I kept everything. Want to keep going here?"
-6. Silence tiers (client timer starts when assistant audio ends): 6 s soft check-in, 12 s offer text, 20 s or 3 no-inputs → end gracefully, continue in text. While `gmail_status = pending`, extend to 60 s. Also set `idle_timeout_ms` if available.
+6. Silence tiers, keyed to the audio, never the transcript (a response's transcript arrives seconds before its audio has played): the client clock starts when the assistant's audio has actually ended (`output_audio_buffer.stopped`, confirmed by the remote level meter going quiet) and only user speech resets it. Nothing fires while the assistant talks. 6 s soft check-in, 12 s offer text, 20 s or 3 no-inputs → goodbye, then hang up once the goodbye has been heard (a 500 ms beat after its audio ends; 6 s if no goodbye comes; 15 s cap). Each check-in gets at least 5 s of quiet after its audio ends before the next tier; any other assistant turn (a follow-up after a tool call, a reaction to a system note) restarts the clock. Captions are revealed at the measured speaking rate so they track the speech, and turn final only once the line has been said. While `gmail_status = pending`, extend to 60 s. Also set `idle_timeout_ms` if available.
 7. Mic denied or zero input level → instant text fallback.
 8. Latency knobs: `silenceDurationMs` 400 to 600, instructions under 1,500 tokens, tool results under 300 bytes, prompt says two sentences max. Measure user-stop → first-audio in the browser; log p50/p95 per turn to `events`.
 9. Supervisor (off the audio path): on each user transcript, Haiku re-extracts slots and flags jailbreak or conflicts using `prompts/supervisor.md`; if it patches state, re-send instructions via `session.update`.

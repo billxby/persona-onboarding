@@ -515,11 +515,17 @@ const switchChannel: Handler = async (ctx, input, effects) => {
   return { session, ok: true, note: "staying in text" };
 };
 
+/**
+ * The model wants to hang up. The call is not over yet: the goodbye is still playing, and the browser
+ * drops the line once it has been heard (DESIGN §8.9, §10.6), then posts `call_ended`, which is the one
+ * place a call closes (call log bubble, duration, the text follow-up; `call.ts`). Closing it here would
+ * make that later event a no-op.
+ */
 const endCall: Handler = async (ctx, input, effects) => {
   let session = ctx.session;
   if (ctx.channel !== "call") return { session, ok: false, error: "there is no call to end" };
-  session = await patchSession(session.id, () => ({ call_state: "ended_by_bot", channel_pref: "text" }));
-  await insertEvent(session.id, "call_ended", { reason: String(input.reason), by: "bot", via: "tool" });
+  session = await patchSession(session.id, () => ({ channel_pref: "text" }));
+  await insertEvent(session.id, "end_call", { reason: String(input.reason), by: "bot", via: "tool" });
   effects.end_call = true;
   return { session, ok: true, note: "call is ending; the chat continues" };
 };

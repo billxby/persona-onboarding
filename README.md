@@ -155,9 +155,13 @@ eligible again. Replay is deterministic and fuzz-tested like the beliefs ledger.
 `@openai/agents/realtime` over browser WebRTC with server VAD (500 ms silence, 300 ms padding). The
 browser mirrors the minted session config, runs the tools against `/api/tools/:name`, re-sends
 instructions after any state change, and saves transcript turns. A Haiku supervisor re-extracts slots
-from each user transcript off the audio path and patches state. Silence tiers run on the client: 6 s
-soft check-in, 12 s offer text, 20 s graceful goodbye and hang up (×3 while a Gmail connect is
-pending). If the assistant says goodbye without calling `end_call`, the call ends 3 s later. Drops are
+from each user transcript off the audio path and patches state. Silence tiers run on the client and
+are keyed to the audio, not the transcript (which arrives seconds ahead of the speech): the clock
+starts when the assistant's audio has actually ended, nothing fires while it talks, 6 s soft check-in,
+12 s offer text, 20 s goodbye, each check-in getting at least 5 s of quiet after it (×3 while a Gmail
+connect is pending). The call drops half a second after the goodbye has been heard, never
+mid-sentence, and captions are paced to the speech. If the assistant says goodbye without calling
+`end_call`, the call ends 3 s later. Drops are
 caught three ways: the WebRTC connection state, a `pagehide` beacon, and a heartbeat gap over 10 s
 checked on the next request. Voice-turn latency (user stop → first audio) is logged per turn. A
 declined call leaves a voicemail bubble with a transcription and, when TTS succeeds, a real audio clip.

@@ -109,4 +109,68 @@ describe("SilenceWatcher", () => {
     vi.advanceTimersByTime(60_000);
     expect(tiers).toEqual([]);
   });
+
+  it("nothing fires while the assistant talks; a follow-up turn restarts the clock", () => {
+    w.onAssistantAudioStopped(); // a short line ("Got it") ended: t=0
+    vi.advanceTimersByTime(3_000);
+    w.onAssistantAudioStarted(); // the long answer after a tool call: t=3
+    vi.advanceTimersByTime(13_000); // t=16, still talking: no tier
+    expect(tiers).toEqual([]);
+    expect(w.isSpeaking).toBe(true);
+    w.onAssistantAudioStopped(); // t=16: the user's silence starts here
+    vi.advanceTimersByTime(5_999);
+    expect(tiers).toEqual([]);
+    vi.advanceTimersByTime(1); // t=22
+    expect(tiers).toEqual([1]);
+  });
+
+  it("each check-in gets at least 5 s of quiet after its audio ends", () => {
+    w.onAssistantAudioStopped(); // t=0
+    vi.advanceTimersByTime(6_000); // t=6: tier 1
+    expect(tiers).toEqual([1]);
+    vi.advanceTimersByTime(1_000);
+    w.onAssistantAudioStarted(); // the check-in plays t=7..10
+    vi.advanceTimersByTime(3_000);
+    w.onAssistantAudioStopped(); // tier 2 was due at 12; the gap makes it 15
+    vi.advanceTimersByTime(4_999);
+    expect(tiers).toEqual([1]);
+    vi.advanceTimersByTime(1); // t=15
+    expect(tiers).toEqual([1, 2]);
+    vi.advanceTimersByTime(1_000);
+    w.onAssistantAudioStarted(); // the text offer plays t=16..19
+    vi.advanceTimersByTime(3_000);
+    w.onAssistantAudioStopped(); // tier 3 was due at 20; the gap makes it 24
+    vi.advanceTimersByTime(4_999);
+    expect(tiers).toEqual([1, 2]);
+    vi.advanceTimersByTime(1); // t=24
+    expect(tiers).toEqual([1, 2, 3]);
+  });
+
+  it("a check-in that never comes does not stall the tiers", () => {
+    w.onAssistantAudioStopped();
+    vi.advanceTimersByTime(6_000);
+    expect(tiers).toEqual([1]);
+    vi.advanceTimersByTime(9_999); // no check-in audio: the next tier fires 10 s after the last at the latest
+    expect(tiers).toEqual([1]);
+    vi.advanceTimersByTime(1);
+    expect(tiers).toEqual([1, 2]);
+  });
+
+  it("the third unanswered check-in is the goodbye, even after the assistant took another turn", () => {
+    w.onAssistantAudioStopped(); // t=0
+    vi.advanceTimersByTime(6_000); // tier 1
+    w.onAssistantAudioStarted();
+    w.onAssistantAudioStopped(); // check-in, t=6
+    vi.advanceTimersByTime(6_000); // t=12: tier 2
+    expect(tiers).toEqual([1, 2]);
+    w.onAssistantAudioStarted();
+    w.onAssistantAudioStopped(); // check-in, t=12
+    vi.advanceTimersByTime(2_000);
+    w.onAssistantAudioStarted(); // Gmail connected: the assistant reacts, a new turn t=14..16
+    vi.advanceTimersByTime(2_000);
+    w.onAssistantAudioStopped(); // restarts the clock; the next tier is the third unanswered check-in
+    vi.advanceTimersByTime(6_000); // t=22
+    expect(tiers).toEqual([1, 2, 3]);
+    expect(w.unansweredCheckIns).toBe(3);
+  });
 });
