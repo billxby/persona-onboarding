@@ -19,8 +19,12 @@ const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s]`,
 let shotN = 0;
 const shot = async (pg, name) => { const f = path.join(OUT, `${String(++shotN).padStart(2, "0")}-${name}.png`); await pg.screenshot({ path: f }); log("shot", f); };
 
-const browser = await chromium.launch({ executablePath: fs.existsSync(EXE) ? EXE : undefined, headless: true });
-const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } });
+const browser = await chromium.launch({
+  executablePath: fs.existsSync(EXE) ? EXE : undefined,
+  headless: true,
+  args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"],
+});
+const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 }, permissions: ["microphone"] });
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => { errors.push(String(e)); log("  [pageerror]", String(e).slice(0, 300)); });
@@ -158,6 +162,35 @@ try {
     v = await view(sid);
     check(v.session?.channel_pref === "call", `channel_pref call (${v.session?.channel_pref})`);
     check((v.intentions ?? []).find((i) => i.key === "offer_call")?.status === "done", "offer_call settled");
+
+    // answer it: a live OpenAI Realtime call. The opener continues what the clip set up (name known, need not),
+    // one user turn by injected speech, then hang up and expect the text resume with nothing re-asked.
+    await page.click("[aria-label='Accept']", { force: true });
+    await page.waitForSelector("[aria-label='End call']", { timeout: 40_000 });
+    check(true, "call connected (End call visible)");
+    await page.waitForTimeout(9000);
+    const caps = () => page.evaluate(() => window.__persona.session.getState().captions.map((c) => `${c.speaker}: ${c.text}`));
+    let cap = await caps();
+    for (const c of cap) log("  🎙", c.slice(0, 160));
+    check(cap.some((c) => c.startsWith("assistant")), "the agent spoke an opener on the call");
+    check(!cap.some((c) => /what should i call you|your name\?/i.test(c)), "the call opener did not re-ask the name the clip captured");
+    await shot(page, "call-opener");
+    await page.evaluate(() => window.__persona.callController.injectUserSpeech("Yeah, so the main thing is my gym membership, I need to cancel it before it renews."));
+    await page.waitForTimeout(15000);
+    cap = await caps();
+    for (const c of cap.slice(-3)) log("  🎙", c.slice(0, 160));
+    v = await view(sid);
+    check(!!v.session?.need, `the need was captured on the call (${(v.session?.need ?? "").slice(0, 60)})`);
+    await shot(page, "call-turn");
+    const beforeHangup = (await inTexts()).length;
+    await page.click("[aria-label='End call']");
+    await page.waitForFunction((n) => document.querySelectorAll(".bubble-in[data-bubble]").length > n, beforeHangup, { timeout: 90_000 }).catch(() => undefined);
+    await page.waitForTimeout(4000);
+    const afterCall = (await inTexts()).slice(beforeHangup);
+    for (const b of afterCall) log("A(after call):", b.slice(0, 200));
+    check(afterCall.length >= 1, "the thread resumed in text after the hangup");
+    check(!afterCall.some((b) => NAME_ASKS.some((re) => re.test(b))), "nothing re-asked after the call");
+    await shot(page, "after-call");
     throw new Error("__done__");
   }
   await tap("[data-clip-secondary='call-no']");
@@ -191,6 +224,15 @@ try {
   v = await view(sid);
   const done = ["get_name", "name_agent", "connect_gmail", "offer_call"].map((k) => [k, (v.intentions ?? []).find((i) => i.key === k)?.status]);
   check(done.every(([, s]) => s === "done"), `intentions settled: ${done.map(([k, s]) => `${k}=${s}`).join(" ")}`);
+
+  // the header name and the contact bubble open the contact card; Create New Contact saves it
+  await page.locator("[data-thread-contact]").click({ force: true });
+  await page.waitForSelector("[data-contact-sheet]", { timeout: 8000 });
+  check((await page.locator("[data-contact-sheet-name]").textContent())?.includes("Jarvis") === true, "contact card shows the agent's name once named");
+  await page.waitForTimeout(600);
+  await shot(page, "contact-sheet");
+  await page.locator("[data-contact-sheet] >> text=Done").click();
+  await page.waitForSelector("[data-contact-sheet]", { state: "detached", timeout: 8000 });
 
   // a tapback on the agent's last question is an answer: it is scored and the chat acts on it
   const lastAssistant = [...v.messages].reverse().find((m) => m.role === "assistant" && m.kind === "text");

@@ -268,7 +268,14 @@ export async function runTextTurn(session_id: string, trigger: ChatTrigger = "us
         ringing = !!r.effects.ring;
         emit({ type: "tool", name: "switch_channel", ok: r.result.ok, ring: r.effects.ring, next_best_ask: r.result.next_best_ask });
       }
-      await llmTurn(session, trigger, ringing ? "ringing" : undefined, emit, [clipClosedHint(session, cap, ringing)]);
+      if (ringing) {
+        // the call takes over from here: one fixed line, no model turn that could second-guess the ring
+        const row = await insertMessage({ session_id, role: "assistant", kind: "text", content: `Calling you now${session.user_name ? `, ${session.user_name}` : ""}.`, channel: "text" });
+        emit({ type: "message", message: row });
+        await finish();
+        return;
+      }
+      await llmTurn(session, trigger, undefined, emit, [clipClosedHint(session, cap, false)]);
       await finish();
       return;
     }

@@ -202,6 +202,7 @@ export function Simulator() {
                   <IMessageThread
                     contactName={contactName}
                     contactKnown={!!agentName}
+                    contactPhone={UNKNOWN_SENDER}
                     senderInContacts={senderInContacts}
                     messages={messages}
                     typing={typing}

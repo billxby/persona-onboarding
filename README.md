@@ -214,9 +214,8 @@ What is real today:
   `/api/oauth/google/start?sid=&via=clip` or the demo inbox.
 - `GET /.well-known/apple-app-site-association` returns the `appclips` association, filled from `APPLE_TEAM_ID` and
   `APP_CLIP_BUNDLE_ID` when set.
-- `ios/PersonaClip/` is a SwiftUI App Clip scaffold (tour, demo, content models, entitlements, Info.plist keys) that
-  type-checks against the iOS SDK; the web wizard is the reference for its screens. `ios/README.md` has the Xcode
-  and App Store Connect steps.
+- `ios/PersonaClip/` is a frozen SwiftUI scaffold from the earlier tour (it type-checks; nothing more is planned for
+  it). The App Clip in this project is the simulated one in the web phone; a native clip is out of scope.
 - Events `app_clip_card_shown`, `app_clip_opened`, `app_clip_closed`, `app_clip_cta`, `app_clip_answer`,
   `call_offer`, `app_clip_fallback_web` land in `events` for metrics and show on `/db`.
 

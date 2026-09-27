@@ -474,3 +474,26 @@ lists the live session).
 - `/?fresh=1` clears this browser's cached thread and previous-runs list and reloads without the flag; the stage menu
   gained a `clear` for the runs list. The server keeps its rows either way; wiping those is a SQL `DELETE FROM
   sessions` (everything else cascades), which was done once on 2026-09-27 to start testing from scratch (110 sessions).
+
+
+## 17. The contact card, a live call after the clip, the clip funnel in metrics, scope (ninth commit, 2026-09-27)
+
+- **Contact card** (`ContactSheet.tsx`): tapping the name in the thread header or a shared contact bubble opens the
+  iOS contact card inside the phone: photo (the Persona mark once named, the grey silhouette before), name or number,
+  message / call / video / mail, then the saved details (mobile, company, notes) or "Create New Contact" / "Add to
+  Existing Contact", which puts Persona in Contacts. "call" rings the phone.
+- **Live call after "Call me now", tested end to end** (`scripts/e2e-app-clip.mjs --call` now answers the ring with a
+  fake microphone): the OpenAI Realtime call connected, the opener used the clip's name and did not re-ask it ("Hey
+  Bill, what's one concrete thing I can take off your plate this week?"), an injected user turn set the need on the
+  call ("Cancel my gym membership before it renews"), the hangup resumed in text with nothing re-asked.
+- **Bug found by that run and fixed:** while the phone was ringing, the clip's relay turn still asked "Want me to
+  call you now, or keep going here?". When the relay rings the phone it now lands one fixed line ("Calling you now,
+  Bill.") and no model turn at all.
+- **Metrics** (`scripts/metrics.ts`): a `clip` funnel per session (card shown, opened, steps answered / skipped,
+  Google from the clip, the call answer and where it was given, closed, finished, tapbacks read as answers), a
+  `clip` line in the report and a compact `clip` column in the table ("NAG y ✓").
+- **Scope, written down:** the App Clip is simulated in the web phone; the SwiftUI scaffold is frozen and will not
+  be rewritten (DESIGN §2, §17.10, §19.2.9, §19.3; README; `ios/README.md`).
+
+Verified: typecheck, lint, 152 unit tests, `next build`, `scripts/e2e-app-clip.mjs` full (contact card opens with
+the agent's name) and `--call` (the live voice run above).

@@ -44,6 +44,23 @@ export interface SessionMetrics {
   calls: number;
   /** what was on the agent's mind: per intention, how often it was raised and how it landed (DESIGN §13b) */
   intentions: Record<string, { status: string; nudges: number; receptivity: number | null; mean: number | null }>;
+  /** the App Clip funnel (DESIGN §19): card → opened → each step → call answer → closed/finished, plus tapbacks read as answers */
+  clip: ClipFunnel;
+}
+
+export interface ClipFunnel {
+  card_shown: boolean;
+  opened: number;
+  /** steps answered in the clip (user_name, agent_name, gmail) */
+  answered: string[];
+  skipped: string[];
+  gmail_from_clip: boolean;
+  /** the last call answer given anywhere (clip, chat, tapback) and where */
+  call_offer: { answer: string; via: string } | null;
+  closed: number;
+  finished: boolean;
+  /** tapbacks that were read as an answer to something the agent asked */
+  tapbacks_scored: number;
 }
 
 const SLOTS: SlotName[] = ["user_name", "need", "gmail", "agent_name"];
@@ -115,6 +132,27 @@ export async function metricsFor(session_id: string): Promise<SessionMetrics | n
   }
   const slotSets = byType("slot_set");
   const slotRejected = byType("slot_rejected");
+
+  // the App Clip funnel
+  const clipAnswers = byType("app_clip_answer").filter((e) => (e.payload as { ok?: boolean }).ok !== false);
+  const stepOf = (e: EventRow) => String((e.payload as { step?: string }).step ?? "");
+  const answered = [...new Set(clipAnswers.filter((e) => !(e.payload as { skipped?: boolean }).skipped && stepOf(e) !== "call_offer").map(stepOf))];
+  const skipped = [...new Set(clipAnswers.filter((e) => !!(e.payload as { skipped?: boolean }).skipped).map(stepOf))];
+  const oauthFromClip = byType("oauth_started").some((e) => (e.payload as { via?: string }).via === "clip");
+  if (oauthFromClip && session.gmail_status === "connected" && !answered.includes("gmail")) answered.push("gmail");
+  const callOfferEv = byType("call_offer").at(-1);
+  const clipClosed = byType("app_clip_closed");
+  const clip: ClipFunnel = {
+    card_shown: byType("app_clip_card_shown").length > 0,
+    opened: byType("app_clip_opened").length,
+    answered,
+    skipped,
+    gmail_from_clip: oauthFromClip,
+    call_offer: callOfferEv ? { answer: String((callOfferEv.payload as { answer?: string }).answer ?? "?"), via: String((callOfferEv.payload as { via?: string }).via ?? "?") } : null,
+    closed: clipClosed.length,
+    finished: clipClosed.some((e) => (e.payload as { completed?: boolean }).completed === true),
+    tapbacks_scored: byType("receptivity").filter((e) => (e.payload as { source?: string; scored?: boolean }).source === "tapback" && (e.payload as { scored?: boolean }).scored === true).length,
+  };
   const slotOf = (e: EventRow) => String((e.payload as { slot?: string }).slot ?? "");
 
   const slots = Object.fromEntries(
@@ -155,7 +193,17 @@ export async function metricsFor(session_id: string): Promise<SessionMetrics | n
     supervisor_patches: byType("supervisor").filter((e) => !!(e.payload as { patched?: boolean }).patched).length,
     calls: byType("call_started").length,
     intentions: Object.fromEntries((await mindFor(session_id).catch(() => [])).map((r) => [r.key, { status: r.status, nudges: r.nudges, receptivity: r.receptivity, mean: r.receptivity_mean }])),
+    clip,
   };
+}
+
+/** N A G for the clip steps answered (lower-case when skipped), then the call answer's initial: "NAG y", "na· n", "·" when never opened. */
+export function clipFunnelCode(c: ClipFunnel): string {
+  if (!c.opened) return c.card_shown ? "card" : "·";
+  const letter = (step: string, ch: string) => (c.answered.includes(step) ? ch.toUpperCase() : c.skipped.includes(step) ? ch.toLowerCase() : "·");
+  const steps = `${letter("user_name", "n")}${letter("agent_name", "a")}${letter("gmail", "g")}`;
+  const call = c.call_offer ? c.call_offer.answer[0] : "·";
+  return `${steps} ${call}${c.finished ? " ✓" : ""}`;
 }
 
 const tick = (b: boolean) => (b ? "✓" : "·");
@@ -176,11 +224,14 @@ export function formatMetrics(m: SessionMetrics): string {
         .map(([k, v]) => `${k}=${v.status}/${v.nudges}x${v.receptivity == null ? "" : ` ${v.receptivity}/10`}${v.mean != null && v.nudges > 1 ? ` avg ${v.mean}` : ""}`)
         .join(" | ") || "(no intentions)"
     }`,
+    `clip    card=${tick(m.clip.card_shown)} opened=${m.clip.opened} answered=[${m.clip.answered.join(",")}] skipped=[${m.clip.skipped.join(",")}] google_from_clip=${tick(m.clip.gmail_from_clip)} call=${
+      m.clip.call_offer ? `${m.clip.call_offer.answer} (${m.clip.call_offer.via})` : "—"
+    } closed=${m.clip.closed} finished=${tick(m.clip.finished)} tapbacks_scored=${m.clip.tapbacks_scored}`,
   ].join("\n");
 }
 
 export function metricsTable(rows: SessionMetrics[]): string {
-  const head = ["session", "phase", "N", "Nd", "G", "A", "turns", "grad", "rptQ", "steer", "value", "resume", "lat50", "tools", "rej"];
+  const head = ["session", "phase", "N", "Nd", "G", "A", "turns", "grad", "rptQ", "steer", "value", "resume", "lat50", "tools", "rej", "clip"];
   const body = rows.map((m) => [
     m.session_id.slice(0, 8),
     m.phase,
@@ -197,6 +248,7 @@ export function metricsTable(rows: SessionMetrics[]): string {
     fmtNum(m.latency.p50),
     String(m.tool_calls),
     String(m.rejected_slots),
+    clipFunnelCode(m.clip),
   ]);
   const widths = head.map((h, i) => Math.max(h.length, ...body.map((r) => r[i].length)));
   const line = (r: string[]) => r.map((c, i) => c.padEnd(widths[i])).join("  ");

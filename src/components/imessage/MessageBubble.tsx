@@ -19,6 +19,7 @@ export function MessageBubble({
   onOpenActions,
   onOpenLink,
   onOpenAppClip,
+  onOpenContact,
 }: {
   message: ChatMessage;
   replyTo?: ChatMessage;
@@ -29,6 +30,8 @@ export function MessageBubble({
   onOpenActions: (messageId: string, el: HTMLElement) => void;
   onOpenLink: (messageId: string) => void;
   onOpenAppClip: (messageId: string) => void;
+  /** a shared contact bubble was tapped: show the contact card */
+  onOpenContact?: (messageId: string) => void;
 }) {
   const out = message.role === "user";
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -104,7 +107,7 @@ export function MessageBubble({
         )}
         {c.kind === "contact" && (
           <div ref={bubbleRef} data-bubble={message.id} {...press}>
-            <ContactBubble contact={c.contact} out={out} />
+            <ContactBubble contact={c.contact} out={out} onOpen={onOpenContact ? () => onOpenContact(message.id) : undefined} />
           </div>
         )}
         {c.kind === "audio" && (
@@ -124,7 +127,7 @@ export function MessageBubble({
 }
 
 /** Shared contact (vCard) bubble: avatar with initials, name, "Contact" caption, chevron. */
-function ContactBubble({ contact, out }: { contact: ContactCard; out: boolean }) {
+function ContactBubble({ contact, out, onOpen }: { contact: ContactCard; out: boolean; onOpen?: () => void }) {
   const initials = contact.name
     .split(/\s+/)
     .filter(Boolean)
@@ -132,7 +135,7 @@ function ContactBubble({ contact, out }: { contact: ContactCard; out: boolean })
     .map((w) => w[0]?.toUpperCase())
     .join("");
   return (
-    <div className={cn("flex w-[262px] items-center gap-3 rounded-[18px] px-3 py-2.5", out ? "bg-imsg-blue text-white" : "bg-imsg-gray text-screen-ink")} data-contact={contact.name}>
+    <button type="button" onClick={onOpen} className={cn("flex w-[262px] items-center gap-3 rounded-[18px] px-3 py-2.5 text-left active:opacity-80", out ? "bg-imsg-blue text-white" : "bg-imsg-gray text-screen-ink")} data-contact={contact.name}>
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#a2a2a8] to-[#6e6e73] text-[16px] font-semibold text-white">
         {initials || "P"}
       </div>
@@ -141,7 +144,7 @@ function ContactBubble({ contact, out }: { contact: ContactCard; out: boolean })
         <div className={cn("truncate text-[13px]", out ? "text-white/75" : "text-screen-ink/55")}>{contact.org ?? contact.note ?? "Contact"}</div>
       </div>
       <ChevronRight className={cn("h-4 w-4 shrink-0", out ? "text-white/60" : "text-screen-ink/35")} />
-    </div>
+    </button>
   );
 }
 

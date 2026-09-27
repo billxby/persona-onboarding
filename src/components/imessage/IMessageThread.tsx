@@ -8,6 +8,7 @@ import { cn, formatClock } from "@/lib/utils";
 import { AppClipCard } from "./AppClipCard";
 import { AppClipRunner } from "./AppClipRunner";
 import { Composer, type ReplyTarget } from "./Composer";
+import { ContactSheet } from "./ContactSheet";
 import { MessageActions, type AnchorRect } from "./MessageActions";
 import { MessageBubble } from "./MessageBubble";
 import { ThreadHeader } from "./ThreadHeader";
@@ -25,6 +26,7 @@ const HOUR = 60 * 60 * 1000;
 export function IMessageThread({
   contactName,
   contactKnown = true,
+  contactPhone = "",
   senderInContacts,
   messages,
   typing,
@@ -38,6 +40,8 @@ export function IMessageThread({
   contactName: string;
   /** false until the agent is named: the header shows a grey silhouette over the number, as Messages does for an unknown sender */
   contactKnown?: boolean;
+  /** the number Persona texts from (what the contact card shows) */
+  contactPhone?: string;
   senderInContacts: boolean;
   messages: ChatMessage[];
   typing: boolean;
@@ -57,6 +61,7 @@ export function IMessageThread({
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [appClipFor, setAppClipFor] = useState<string | null>(null);
   const [runnerFor, setRunnerFor] = useState<string | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
 
   const x = useMotionValue(0);
   const timeOpacity = useTransform(x, [-REVEAL_PX, -REVEAL_PX / 3, 0], [1, 0.2, 0]);
@@ -137,7 +142,7 @@ export function IMessageThread({
 
   return (
     <div ref={rootRef} className="relative h-full w-full select-none bg-screen">
-      <ThreadHeader name={contactName} known={contactKnown} />
+      <ThreadHeader name={contactName} known={contactKnown} onOpenContact={() => setContactOpen(true)} />
 
       {/* Thread and composer share the space under the header. The composer is in flow, so
           the thread shrinks as the field grows (multi-line text, reply card) instead of
@@ -172,6 +177,7 @@ export function IMessageThread({
                       senderInContacts={senderInContacts}
                       onOpenActions={openActions}
                       onOpenLink={openLink}
+                      onOpenContact={() => setContactOpen(true)}
                       onOpenAppClip={setAppClipFor}
                     />
                     {m.role === "user" && m.status === "failed" && (
@@ -228,6 +234,8 @@ export function IMessageThread({
           />
         )}
       </AnimatePresence>
+
+      <AnimatePresence>{contactOpen && <ContactSheet key="contact" name={contactName} known={contactKnown} phone={contactPhone} onClose={() => setContactOpen(false)} />}</AnimatePresence>
 
       <AnimatePresence>
         {appClipMessage && appClipLink && (

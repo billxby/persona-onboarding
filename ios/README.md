@@ -1,6 +1,7 @@
 # Persona App Clip (native scaffold)
 
-> Revised 2026-09-27: the clip is now the app's **onboarding**, not a tour (DESIGN §19). The web wizard in
+> **Frozen (2026-09-27).** This scaffold is kept as-is and is not being rewritten: the project's App Clip is the
+> simulated one in the web phone (DESIGN §2, §19). What follows is historical context. The clip is now the app's **onboarding**, not a tour (DESIGN §19). The web wizard in
 > `src/app/clip/ClipOnboarding.tsx` (welcome → three value screens → your name → a name for Persona → Google → the
 > call offer → done) is the reference for the native screens; its copy is the `onboarding` block of
 > `clip_content.json`, and it writes each answer to `POST <base>/api/clip/answer` and resumes from

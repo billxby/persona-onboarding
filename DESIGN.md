@@ -31,7 +31,7 @@ In:
 7. Graduation end state: summary card, thread header renamed to the agent, contact-card bubble, hint line "Try: anything from my landlord?".
 8. App Clip: the app's onboarding, launched from a card in the thread. A short mobile wizard (welcome, three value screens, your name, a name for Persona, Google, the call offer, done) that writes each answer to the session the moment it is given and hands the relay back to the thread when it closes. Simulated in the phone, real web fallback, native scaffold; details in section 19.
 
-Out: real iMessage, SMS, telephony, calendar, sending email, reminders, outbound calls on the user's behalf, proactive messages after graduation, Inngest, Langfuse, LiveKit, Pipecat. Publishing the App Clip to the App Store is out; everything up to that point is in (section 19).
+Out: real iMessage, SMS, telephony, calendar, sending email, reminders, outbound calls on the user's behalf, proactive messages after graduation, Inngest, Langfuse, LiveKit, Pipecat. The App Clip is **simulated**: the card, the download and the app run inside the web phone (section 19). A native Swift App Clip, an Apple Developer account and App Store publishing are out; the SwiftUI scaffold in `ios/PersonaClip/` is frozen as-is and is not to be rewritten to mirror the wizard.
 
 ## 3. Stack
 
@@ -366,7 +366,7 @@ Rules:
 
 ## 15. Simulator UI
 
-1. Phone frame: header (an unknown sender's grey silhouette over a number → the agent's name and mark after naming), thread, composer. iMessage sounds, synthesized: a whoosh when your bubble leaves, a two-note ding when one of Persona's arrives (nothing on load or restore). Bubbles: text, tapback, link card (Connect Gmail), App Clip bubble (Contacts-gated), contact card, voicemail with transcription, call log entry, summary card. The App Clip runs full screen inside the phone (system card → launch screen → the app; §19), and closing it hands the relay to the thread.
+1. Phone frame: header (an unknown sender's grey silhouette over a number → the agent's name and mark after naming), thread, composer. Tapping the header name or a shared contact bubble opens the iOS contact card: photo or silhouette, name, message / call / video / mail, then the saved details or "Create New Contact" (which puts Persona in Contacts). iMessage sounds: the real whoosh when your bubble leaves, a synthesized two-note ding when one of Persona's arrives (nothing on load or restore). Bubbles: text, tapback, link card (Connect Gmail), App Clip bubble (Contacts-gated), contact card, voicemail with transcription, call log entry, summary card. The App Clip runs full screen inside the phone (system card → launch screen → the app; §19), and closing it hands the relay to the thread.
 2. Call screen: incoming call with Accept/Decline, live captions, mute, hang up, "switch to text."
 3. Checklist to the right of the phone: You · Your need · Gmail · My name, done or not, labels only (values live in the brain view). Fills live via Realtime; a row tap edits; never presented as a form. Top-right: light/dark toggle; the stage chrome and the phone (iOS dark appearance) follow it.
 4. Brain view (small side panel): active beliefs with confidence and reason, last `next_best_ask`, latency p50/p95. `/db` has a run dropdown in its top bar: the live session or any archived run, read-only (slots, transcript, client events), with Restore.
@@ -390,7 +390,7 @@ Rules:
 7. Value moment and main mode: `recent_emails`, `search_gmail`, `draft_reply`, graduation summary card, contact card, header rename, hint line.
 8. Simulator polish: incoming-call screen, ringtone, decline → voicemail, progress chips, brain view, latency logging.
 9. Evaluation: simulator suite, manual voice cases, fix every repeated question, README.
-10. App Clip (section 19): content source, the onboarding wizard (`/clip` and the in-phone runner, one component), `POST /api/clip/answer` + `GET /api/clip/state`, the `clip_closed` relay, the call offer, tapbacks as answers, `send_app_clip`, AASA route, native scaffold, events.
+10. App Clip (section 19), simulated: content source, the onboarding wizard (`/clip` and the in-phone runner, one component), `POST /api/clip/answer` + `GET /api/clip/state`, the `clip_closed` relay, the call offer, tapbacks as answers, `send_app_clip`, AASA route, events. No native work.
 
 ## 18. README must cover
 
@@ -512,14 +512,15 @@ headline per screen (Instrument Serif via `next/font`), system text for everythi
    just the same; from a plain browser tab, "Start in Messages" (`/?sid=&clip=closed`) does the same on arrival.
 8. AASA: `GET /.well-known/apple-app-site-association` → `{"appclips":{"apps":["<APPLE_TEAM_ID>.<APP_CLIP_BUNDLE_ID>"]}}`
    from env (`APPLE_TEAM_ID`, `APP_CLIP_BUNDLE_ID`, `APP_STORE_ID`; empty until the Apple side exists).
-9. Native scaffold `ios/PersonaClip/`: SwiftUI sources that decode the same content JSON (the bundled copy is kept
-   in sync), entitlements, Info.plist keys, README. The web wizard is the reference for the native screens; the
-   scaffold still shows the tour and demo and is not yet updated to the wizard.
+9. Native scaffold `ios/PersonaClip/`: **frozen** (decision 2026-09-27). It is the earlier tour-and-demo SwiftUI
+   code plus entitlements and Info.plist keys, kept only as proof the shape is buildable; it is not updated to the
+   wizard and there is no plan to rewrite it in Swift. The App Clip in this project is the simulated one in the web
+   phone. Its bundled `clip_content.json` is still mirrored so it keeps compiling.
 10. Events: `app_clip_card_shown`, `app_clip_opened`, `app_clip_closed`, `app_clip_cta`, `app_clip_fallback_web`,
     `app_clip_answer`, `call_offer`, plus `oauth_started { via: "clip" }`, so the whole funnel shows up in metrics
     and on `/db`.
 
-### 19.3 Steps to the real card in Messages (owner: Persona)
+### 19.3 Steps to the real card in Messages (reference only; out of scope, see §2)
 
 1. Apple Developer Program team; parent app record in App Store Connect; bundle ids `com.persona.app` and
    `com.persona.app.Clip` (fixed after first upload).

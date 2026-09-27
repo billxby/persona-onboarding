@@ -15,7 +15,7 @@ function requestCall() {
 }
 
 /** iOS 26 Messages header: translucent bar, frosted circular buttons, contact in the middle. */
-export function ThreadHeader({ name, known = true }: { name: string; known?: boolean }) {
+export function ThreadHeader({ name, known = true, onOpenContact }: { name: string; known?: boolean; onOpenContact?: () => void }) {
   return (
     <div className="absolute inset-x-0 top-0 z-20 border-b border-screen-ink/[0.06] bg-screen/80 pt-[54px] backdrop-blur-2xl">
       <div className="relative flex h-[66px] items-start justify-between px-3 pt-1">
@@ -31,10 +31,10 @@ export function ThreadHeader({ name, known = true }: { name: string; known?: boo
               <User className="h-[26px] w-[26px] translate-y-[3px]" strokeWidth={1.8} fill="currentColor" />
             </span>
           )}
-          <div className="mt-0.5 flex items-center text-[12px] leading-none">
+          <button onClick={onOpenContact} className="mt-0.5 flex items-center text-[12px] leading-none active:opacity-60" data-thread-contact>
             <span>{name}</span>
             <ChevronRight className="h-3 w-3 text-screen-ink/40" strokeWidth={2.5} />
-          </div>
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={requestCall} className={`flex h-[38px] w-[38px] items-center justify-center rounded-full text-imsg-blue ${GLASS}`} aria-label="Call">
