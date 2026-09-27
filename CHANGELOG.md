@@ -522,3 +522,9 @@ the agent's name) and `--call` (the live voice run above).
   routes cold-compile slower than that, so a reopened clip fell back to the welcome screen. The runner now fetches the
   state under the launch screen (8 s cap) and hands it in as `initialState`; the `/clip` page reads it on the server.
   The first screen is decided before anything renders: "You're set" when done, the first missing step when half-way.
+
+
+## 19. One sound both ways (eleventh commit, 2026-09-27)
+
+- The incoming sound is the same clip as the outgoing one (`public/sounds/sent.mp3`); the synthesized two-note ding
+  is gone. Two audio elements, so a fast reply never cuts the send sound short.
