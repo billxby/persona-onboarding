@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { playReceived, playSent, unlockAudio } from "@/lib/audio/imessage";
 import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
-import { useSessionStore } from "@/lib/session/store";
+import { RUNS_STORAGE_KEY } from "@/lib/session/runs";
+import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
 import type { ReactionKind } from "@/lib/session/types";
 import { useCrossTabSync } from "@/lib/session/useCrossTabSync";
 import { CallScreen } from "@/components/call/CallScreen";
@@ -47,11 +48,24 @@ export function Simulator() {
   const callActive = call.state === "connecting" || call.state === "live";
   const showCall = screen === "call" && call.state !== "idle";
 
+  // `/?fresh=1` is the clean slate: drop this browser's cached thread and the previous-runs list, then reload
+  // without the flag. The server keeps its rows; this only forgets which sessions this browser knew about.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("fresh") !== "1") return;
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(RUNS_STORAGE_KEY);
+    url.searchParams.delete("fresh");
+    window.location.replace(`${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
   // `/?sid=<uuid>` resumes that server session (the App Clip's web fallback ends with "Start in Messages"
   // pointing here). Runs before the brain boots; the param is then dropped from the address bar.
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") return;
     const url = new URL(window.location.href);
+    if (url.searchParams.get("fresh") === "1") return;
     const sid = url.searchParams.get("sid");
     const fromClip = url.searchParams.get("clip") === "closed";
     if (!sid) return;

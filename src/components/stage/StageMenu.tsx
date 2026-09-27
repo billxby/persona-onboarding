@@ -113,10 +113,15 @@ export function StageMenu() {
               />
             </div>
 
-            <div className="border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
+            <div className="flex items-center justify-between border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
               <span className="flex items-center gap-1.5">
                 <History className="h-3 w-3" /> Previous runs
               </span>
+              {runs.length > 0 && (
+                <button onClick={() => useRunsStore.getState().clear()} className="normal-case tracking-normal text-ink/45 hover:text-ink" data-stage-clear-runs>
+                  clear
+                </button>
+              )}
             </div>
             {/* three rows tall; the rest scrolls */}
             <div className="max-h-[168px] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]" data-stage-runs>

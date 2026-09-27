@@ -465,3 +465,12 @@ dev server of this tree: Contacts on by default, the download ring before launch
 Verified: typecheck, lint, 152 unit tests, `next build`, `scripts/e2e-app-clip.mjs` against a dev server of this
 tree (the web fallback opens on the done screen; the header shows the number, then Jarvis; the /db run dropdown
 lists the live session).
+
+
+## 16. The real sent sound, a clean slate (eighth commit, 2026-09-27)
+
+- The outgoing sound is now the real clip (`public/sounds/sent.mp3`, supplied by the product owner) instead of the
+  synthesized whoosh; the incoming ding stays synthesized. The first send unlocks and preloads it.
+- `/?fresh=1` clears this browser's cached thread and previous-runs list and reloads without the flag; the stage menu
+  gained a `clear` for the runs list. The server keeps its rows either way; wiping those is a SQL `DELETE FROM
+  sessions` (everything else cascades), which was done once on 2026-09-27 to start testing from scratch (110 sessions).

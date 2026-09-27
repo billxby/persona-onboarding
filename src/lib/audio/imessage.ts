@@ -1,12 +1,15 @@
 "use client";
 
 /**
- * iMessage-style sound effects, synthesized with WebAudio so we ship no audio assets (same
- * approach as the ringtone). "Sent" is the short whoosh you hear when your bubble leaves;
- * "received" is the two-note ding of an incoming message. One shared context, created on the
- * first user gesture (autoplay policy); every call is fire-and-forget and never throws.
+ * iMessage sound effects. "Sent" is the real clip at /sounds/sent.mp3 (the whoosh when your bubble
+ * leaves); "received" is a two-note ding synthesized with WebAudio (same approach as the ringtone,
+ * no asset needed). Audio is unlocked by the first send gesture (autoplay policy); every call is
+ * fire-and-forget and never throws.
  */
+const SENT_SRC = "/sounds/sent.mp3";
+
 let ctx: AudioContext | null = null;
+let sent: HTMLAudioElement | null = null;
 
 function context(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -19,34 +22,32 @@ function context(): AudioContext | null {
   }
 }
 
+function sentClip(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (!sent) {
+    sent = new Audio(SENT_SRC);
+    sent.preload = "auto";
+    sent.volume = 0.7;
+  }
+  return sent;
+}
+
 /** Call from a user gesture (the send button) so later incoming dings are allowed to play. */
 export function unlockAudio(): void {
   void context();
+  sentClip()?.load();
 }
 
-/** The outgoing whoosh: a short burst of filtered noise whose pitch rises and fades. */
+/** The outgoing whoosh. */
 export function playSent(): void {
-  const c = context();
-  if (!c) return;
-  const t0 = c.currentTime + 0.005;
-  const dur = 0.22;
-  const buffer = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-  const src = c.createBufferSource();
-  src.buffer = buffer;
-  const filter = c.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.Q.value = 1.4;
-  filter.frequency.setValueAtTime(900, t0);
-  filter.frequency.exponentialRampToValueAtTime(3200, t0 + dur);
-  const gain = c.createGain();
-  gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.03);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  src.connect(filter).connect(gain).connect(c.destination);
-  src.start(t0);
-  src.stop(t0 + dur + 0.02);
+  const a = sentClip();
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    void a.play().catch(() => undefined);
+  } catch {
+    /* no audio */
+  }
 }
 
 /** The incoming ding: two quick sine notes with a soft tail. */
