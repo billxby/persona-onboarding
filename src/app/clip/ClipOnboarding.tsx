@@ -187,6 +187,13 @@ export function ClipOnboarding({ content, sid, embed, initialState, onDone }: Pr
     goTo(CLIP_SCREENS[Math.min(i, CLIP_SCREENS.length - 1)]);
   }, [screen, page, copy.values.length, filled, goTo]);
 
+  /** Skip on the value pages: straight to the setup, landing on the first step the session is still missing. */
+  const skipValues = useCallback(() => {
+    let i = CLIP_SCREENS.indexOf("user_name");
+    while (i < CLIP_SCREENS.length - 1 && filled(CLIP_SCREENS[i])) i++;
+    goTo(CLIP_SCREENS[i]);
+  }, [filled, goTo]);
+
   const back = useCallback(() => {
     setDir(-1);
     setError(null);
@@ -379,7 +386,10 @@ export function ClipOnboarding({ content, sid, embed, initialState, onDone }: Pr
           ) : null}
         </div>
         <div className="flex items-center">{screen === "values" && <Dots count={copy.values.length} index={page} />}</div>
-        <div className="flex w-[64px] items-center justify-end">{showClose && <GhostClose onClick={() => finish(false)} label={screen === "values" ? "Skip" : "Close"} />}</div>
+        <div className="flex w-[64px] items-center justify-end">
+          {/* Skip on the value pages jumps to the setup; the × elsewhere closes the clip */}
+          {showClose && (screen === "values" ? <GhostClose onClick={skipValues} label="Skip" /> : <GhostClose onClick={() => finish(false)} />)}
+        </div>
       </header>
 
       <main className="relative flex-1 overflow-hidden">

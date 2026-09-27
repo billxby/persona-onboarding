@@ -93,14 +93,21 @@ try {
   await page.waitForTimeout(2600);
   check((await page.locator("[data-app-clip-runner] [data-clip-bubble]").count()) >= 2, "value page 1: mock thread bubbles arrived");
   await shot(page, "value-1");
-  await tap("[data-clip-next='value-0']");
-  await page.waitForTimeout(900);
-  await shot(page, "value-2");
-  await tap("[data-clip-next='value-1']");
-  await page.waitForTimeout(900);
-  check((await page.locator("[data-app-clip-runner] [data-clip-page='2']").count()) === 1, "value page 3 (dots)");
-  await shot(page, "value-3");
-  await tap("[data-clip-next='value-2']");
+  if (LEAVE_EARLY) {
+    // Skip on a value page goes to the setup, never out of the clip
+    await tap("[data-clip-skip]");
+    await onScreen("user_name");
+    check((await page.locator("[data-app-clip-runner]").count()) === 1, "Skip on the value pages jumps to the name screen and keeps the clip open");
+  } else {
+    await tap("[data-clip-next='value-0']");
+    await page.waitForTimeout(900);
+    await shot(page, "value-2");
+    await tap("[data-clip-next='value-1']");
+    await page.waitForTimeout(900);
+    check((await page.locator("[data-app-clip-runner] [data-clip-page='2']").count()) === 1, "value page 3 (dots)");
+    await shot(page, "value-3");
+    await tap("[data-clip-next='value-2']");
+  }
 
   // your name: captured the moment it is given
   await onScreen("user_name");

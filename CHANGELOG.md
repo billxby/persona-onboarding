@@ -528,3 +528,9 @@ the agent's name) and `--call` (the live voice run above).
 
 - The incoming sound is the same clip as the outgoing one (`public/sounds/sent.mp3`); the synthesized two-note ding
   is gone. Two audio elements, so a fast reply never cuts the send sound short.
+
+
+## 20. Skip on the value pages goes to the setup (twelfth commit, 2026-09-27)
+
+- Skip on the three value pages jumped out of the clip (it shared the ×'s handler). It now goes straight to the first
+  setup step the session is still missing; only the × closes the clip. `--leave-early` in the e2e covers it.
