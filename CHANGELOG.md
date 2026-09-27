@@ -673,3 +673,10 @@ three-bubble plan.
   mode), and Bill early in onboarding.
 - Loading a demo puts you *in* that session: anything you send from there continues it on the server. Restart to
   leave it untouched next time, or pin a fresh id.
+
+
+## 23. A shorter stage menu (fifteenth commit, 2026-09-27)
+
+- The stage menu is three actions (behind the scenes, incoming call, restart), then the DEMO sessions and two visible
+  previous runs (the rest scroll). "Send App Clip card" is gone (the card comes with the opener, or ask Persona what
+  it can do) and so is the Contacts toggle (it stays on `/db`). Rows and section heads are a little tighter.

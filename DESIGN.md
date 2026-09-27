@@ -509,7 +509,7 @@ headline per screen (Instrument Serif via `next/font`), system text for everythi
    and mounts the wizard full screen under the status bar (no iframe, no bar, no browser chrome).
    The × (Skip on the value screens) or Back to Messages closes it; the runner reports `app_clip_closed { screen,
    completed, call }` and fires the relay. Out of Contacts the same message is a plain link preview that opens
-   `/clip` in the in-phone Safari sheet (the toggle in the stage menu or on `/db` shows that degraded path). The same
+   `/clip` in the in-phone Safari sheet (the toggle on `/db` shows that degraded path). The same
    wizard runs there and reports back to the phone through `postMessage`, so the sheet closes and the relay fires
    just the same; from a plain browser tab, "Start in Messages" (`/?sid=&clip=closed`) does the same on arrival.
 8. AASA: `GET /.well-known/apple-app-site-association` → `{"appclips":{"apps":["<APPLE_TEAM_ID>.<APP_CLIP_BUNDLE_ID>"]}}`

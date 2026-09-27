@@ -41,7 +41,7 @@ Model ids are overridable (`TEXT_MODEL`, `FAST_MODEL`, `REALTIME_MODEL`, `REALTI
 
 | Path | What you see |
 |---|---|
-| `/` | The phone: iMessage thread with the call screen overlaid when a call rings or is live. Progress chips (You · Your need · Gmail · My name) sit above it and are clickable to edit. The `···` button opens the stage menu: behind the scenes, incoming call, send App Clip card, Contacts toggle, restart, previous runs (three visible, the rest scroll, `clear` forgets them), and above them the DEMO sessions: prepared paths pinned in `data/demo_sessions.json`, served by `GET /api/sessions/demo`, loadable from any browser (the rows are the server's; the file only names the ids). The `/db` dropdown lists them too. `/?fresh=1` is the clean slate: it drops this browser's cached thread and runs list and reloads. Gmail connects from the App Clip's Google screen or the connect card |
+| `/` | The phone: iMessage thread with the call screen overlaid when a call rings or is live. Progress chips (You · Your need · Gmail · My name) sit above it and are clickable to edit. The `···` button opens the stage menu, kept short: behind the scenes, incoming call, restart, then the DEMO sessions and the previous runs (two visible, the rest scroll, `clear` forgets them). The Contacts toggle lives on `/db`; the App Clip card comes with the opener (or ask Persona what it can do). DEMO sessions: prepared paths pinned in `data/demo_sessions.json`, served by `GET /api/sessions/demo`, loadable from any browser (the rows are the server's; the file only names the ids). The `/db` dropdown lists them too. `/?fresh=1` is the clean slate: it drops this browser's cached thread and runs list and reloads. Gmail connects from the App Clip's Google screen or the connect card |
 | `/db` | Behind the scenes: the session as the server sees it, slot tracker, the brain view (active beliefs with confidence, status and reason; `next_best_ask`; voice latency p50/p95; connection mode; prompt version), what is on the agent's mind (intentions with receptivity and backoff), transcript, event log |
 | `/connect?sid=…` | The page the "Connect Gmail" link card opens in a popup: real Google OAuth (read-only) or "Use the demo inbox instead" |
 | `/summary/[sid]` | The graduation summary the summary card links to |
@@ -230,7 +230,7 @@ iMessage blue only inside the mockups; it follows the phone's light/dark appeara
 
 What the simulator shows: Persona is in Contacts by default, so the card renders as the iOS App Clip bubble; tapping
 it opens the system card; Open downloads the clip (progress ring on the button) and runs the onboarding full screen
-inside the phone (no iframe, no web bar, no browser chrome). Toggle Persona out of Contacts (stage menu or `/db`) to
+inside the phone (no iframe, no web bar, no browser chrome). Toggle Persona out of Contacts (on `/db`) to
 see iOS's degraded path: the same message as a plain link preview that opens `/clip` in an in-phone Safari sheet; the
 wizard works there too and hands back to the thread when it closes. Nothing the bot sends leaves the phone except
 the Gmail consent popup. `node scripts/e2e-app-clip.mjs` walks through all of it; `--leave-early` leaves after the

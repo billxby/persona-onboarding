@@ -1,37 +1,19 @@
 "use client";
 
-import { AppWindow, Database, Ellipsis, History, PhoneIncoming, RotateCcw, Sparkles, UserRoundPlus, UserRoundX, X } from "lucide-react";
+import { Database, Ellipsis, History, PhoneIncoming, RotateCcw, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
 import { demoLabel, loadDemoSession, useDemoSessions } from "@/lib/session/demos";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
-import { session, useSessionStore } from "@/lib/session/store";
+import { useSessionStore } from "@/lib/session/store";
 import { cn } from "@/lib/utils";
 
-/** "Send App Clip card": the bot drops the Meet-your-Persona App Clip link into the thread. */
-async function sendAppClipCard() {
-  const st = session.get();
-  st.logEvent("user.send_app_clip");
-  try {
-    const res = await fetch("/api/tools/send_app_clip", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ session_id: st.sessionId, input: { reason: "menu" } }),
-    });
-    if (!res.ok) session.get().logEvent("app_clip.send_failed", { status: res.status });
-    await getBrain().refresh?.();
-  } catch (e) {
-    session.get().logEvent("app_clip.send_failed", { error: String(e) });
-  }
-}
-
 /**
- * Bottom-right control: open the behind-the-scenes page, ring the phone, send the
- * App Clip card, toggle Contacts, restart, or pick up a previous run. Gmail is connected
- * from the App Clip's Google screen or the connect card, not from here.
+ * Bottom-right control, kept short: behind the scenes, ring the phone, restart; then the DEMO
+ * sessions and the last couple of runs. Everything else (Contacts toggle, sending the card,
+ * Gmail) lives on /db or in the thread itself.
  */
 export function StageMenu() {
   const [open, setOpen] = useState(false);
@@ -41,8 +23,6 @@ export function StageMenu() {
   const phase = useSessionStore((s) => s.phase);
   const callState = useSessionStore((s) => s.call.state);
   const messageCount = useSessionStore((s) => s.messages.length);
-  const senderInContacts = useSessionStore((s) => s.senderInContacts);
-  const setSenderInContacts = useSessionStore((s) => s.setSenderInContacts);
   const connection = useSessionStore((s) => s.connection);
 
   useEffect(() => {
@@ -76,8 +56,8 @@ export function StageMenu() {
               </span>
             </div>
 
-            <div className="px-2 pb-2">
-              <MenuLink href="/db" icon={Database} label="Behind the scenes" hint="opens in a new tab, syncs live" />
+            <div className="px-2 pb-1.5">
+              <MenuLink href="/db" icon={Database} label="Behind the scenes" hint="new tab, syncs live" />
               <MenuButton
                 icon={PhoneIncoming}
                 label="Incoming call"
@@ -87,21 +67,6 @@ export function StageMenu() {
                   callController.ring();
                   setOpen(false);
                 }}
-              />
-              <MenuButton
-                icon={AppWindow}
-                label="Send App Clip card"
-                hint={senderInContacts ? "the App Clip: Persona's onboarding, full screen" : "add Persona to Contacts first, or it renders as a plain link"}
-                onClick={() => {
-                  void sendAppClipCard();
-                  setOpen(false);
-                }}
-              />
-              <MenuButton
-                icon={senderInContacts ? UserRoundX : UserRoundPlus}
-                label={senderInContacts ? "Remove Persona from Contacts" : "Add Persona to Contacts"}
-                hint={senderInContacts ? "iOS shows unknown senders a plain link that opens Safari" : "App Clip cards only render for senders in Contacts (default on)"}
-                onClick={() => setSenderInContacts(!senderInContacts)}
               />
               <MenuButton
                 icon={RotateCcw}
@@ -117,73 +82,59 @@ export function StageMenu() {
 
             {demos.length > 0 && (
               <>
-                <div className="border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3" /> Demo sessions
-                  </span>
-                </div>
+                <SectionHead icon={Sparkles}>Demo sessions</SectionHead>
                 {/* prepared paths, on the server, loadable from any browser */}
-                <div className="max-h-[168px] overflow-y-auto px-2 pb-1 [scrollbar-width:thin]" data-stage-demos>
+                <div className="max-h-[104px] overflow-y-auto px-2 pb-1 [scrollbar-width:thin]" data-stage-demos>
                   {demos.map((d) => (
-                    <button
+                    <Row
                       key={d.id}
+                      testId={d.id}
+                      disabled={d.id === sessionId}
                       onClick={() => {
                         callController.end("user_hangup");
                         loadDemoSession(d.id);
                         setOpen(false);
                       }}
-                      disabled={d.id === sessionId}
-                      className="flex h-[52px] w-full items-center justify-between gap-2 rounded-lg px-2 text-left hover:bg-ink/5 disabled:opacity-50 disabled:hover:bg-transparent"
-                      data-stage-demo={d.id}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 text-[13px]">
+                      title={
+                        <>
                           <span className="rounded-[4px] bg-ink px-1 py-px font-mono text-[9px] font-bold uppercase tracking-wider text-panel">demo</span>
                           <span className="truncate">{demoLabel(d)}</span>
-                        </div>
-                        <div className="font-mono text-[11px] text-ink/45">
-                          {d.id.slice(0, 8)} · {d.messages} msgs · {d.gmail_status === "connected" ? "gmail" : d.phase}
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-[11px] text-imsg-blue">{d.id === sessionId ? "Loaded" : "Load"}</span>
-                    </button>
+                        </>
+                      }
+                      sub={`${d.id.slice(0, 8)} · ${d.messages} msgs · ${d.gmail_status === "connected" ? "gmail" : d.phase}`}
+                      action={d.id === sessionId ? "Loaded" : "Load"}
+                    />
                   ))}
                 </div>
               </>
             )}
 
-            <div className="flex items-center justify-between border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
-              <span className="flex items-center gap-1.5">
-                <History className="h-3 w-3" /> Previous runs
-              </span>
-              {runs.length > 0 && (
-                <button onClick={() => useRunsStore.getState().clear()} className="normal-case tracking-normal text-ink/45 hover:text-ink" data-stage-clear-runs>
-                  clear
-                </button>
-              )}
-            </div>
-            {/* three rows tall; the rest scrolls */}
-            <div className="max-h-[168px] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]" data-stage-runs>
+            <SectionHead
+              icon={History}
+              right={
+                runs.length > 0 ? (
+                  <button onClick={() => useRunsStore.getState().clear()} className="normal-case tracking-normal text-ink/45 hover:text-ink" data-stage-clear-runs>
+                    clear
+                  </button>
+                ) : null
+              }
+            >
+              Previous runs
+            </SectionHead>
+            {/* two rows tall; the rest scrolls */}
+            <div className="max-h-[104px] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]" data-stage-runs>
               {runs.length === 0 && <div className="px-2 py-2 text-[12px] text-ink/40">None yet. Restart to archive this one.</div>}
               {runs.map((r) => (
-                <button
+                <Row
                   key={r.id}
                   onClick={() => {
                     restoreRun(r.id);
                     setOpen(false);
                   }}
-                  className="flex h-[52px] w-full items-center justify-between rounded-lg px-2 text-left hover:bg-ink/5"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px]">
-                      {r.slots.user_name.value ? `${r.slots.user_name.value}` : "Anonymous"} · {r.messages.length} msgs
-                    </div>
-                    <div className="text-[11px] text-ink/45">
-                      {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {r.phase}
-                    </div>
-                  </div>
-                  <span className="text-[11px] text-imsg-blue">Restore</span>
-                </button>
+                  title={<span className="truncate">{r.slots.user_name.value ? `${r.slots.user_name.value}` : "Anonymous"} · {r.messages.length} msgs</span>}
+                  sub={`${new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${r.phase}`}
+                  action="Restore"
+                />
               ))}
             </div>
           </motion.div>
@@ -204,9 +155,38 @@ export function StageMenu() {
   );
 }
 
+function SectionHead({ icon: Icon, children, right }: { icon: React.ComponentType<{ className?: string }>; children: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between border-t border-line px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
+      <span className="flex items-center gap-1.5">
+        <Icon className="h-3 w-3" /> {children}
+      </span>
+      {right}
+    </div>
+  );
+}
+
+/** One 52 px row: a title line, a small sub line, an action word on the right. */
+function Row({ title, sub, action, onClick, disabled, testId }: { title: React.ReactNode; sub: string; action: string; onClick: () => void; disabled?: boolean; testId?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      data-stage-demo={testId}
+      className="flex h-[52px] w-full items-center justify-between gap-2 rounded-lg px-2 text-left hover:bg-ink/5 disabled:opacity-50 disabled:hover:bg-transparent"
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 text-[13px]">{title}</div>
+        <div className="truncate font-mono text-[11px] text-ink/45">{sub}</div>
+      </div>
+      <span className="shrink-0 text-[11px] text-imsg-blue">{action}</span>
+    </button>
+  );
+}
+
 function MenuLink({ href, icon: Icon, label, hint }: { href: string; icon: React.ComponentType<{ className?: string }>; label: string; hint?: string }) {
   return (
-    <Link href={href} target="_blank" className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-ink/5">
+    <Link href={href} target="_blank" className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-ink/5">
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/5"><Icon className="h-4 w-4" /></span>
       <span className="min-w-0">
         <span className="block text-[13px] font-medium">{label}</span>
@@ -230,7 +210,7 @@ function MenuButton({
   disabled?: boolean;
 }) {
   return (
-    <button onClick={onClick} disabled={disabled} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-ink/5 disabled:opacity-40 disabled:hover:bg-transparent">
+    <button onClick={onClick} disabled={disabled} className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left hover:bg-ink/5 disabled:opacity-40 disabled:hover:bg-transparent">
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/5"><Icon className="h-4 w-4" /></span>
       <span className="min-w-0">
         <span className="block text-[13px] font-medium">{label}</span>
