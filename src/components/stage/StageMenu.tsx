@@ -1,11 +1,12 @@
 "use client";
 
-import { AppWindow, Database, Ellipsis, History, PhoneIncoming, RotateCcw, UserRoundPlus, UserRoundX, X } from "lucide-react";
+import { AppWindow, Database, Ellipsis, History, PhoneIncoming, RotateCcw, Sparkles, UserRoundPlus, UserRoundX, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getBrain } from "@/lib/brain";
 import { callController } from "@/lib/call/controller";
+import { demoLabel, loadDemoSession, useDemoSessions } from "@/lib/session/demos";
 import { restartSimulation, restoreRun, useRunsStore } from "@/lib/session/runs";
 import { session, useSessionStore } from "@/lib/session/store";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ async function sendAppClipCard() {
 export function StageMenu() {
   const [open, setOpen] = useState(false);
   const runs = useRunsStore((s) => s.runs);
+  const demos = useDemoSessions();
   const sessionId = useSessionStore((s) => s.sessionId);
   const phase = useSessionStore((s) => s.phase);
   const callState = useSessionStore((s) => s.call.state);
@@ -112,6 +114,43 @@ export function StageMenu() {
                 }}
               />
             </div>
+
+            {demos.length > 0 && (
+              <>
+                <div className="border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3" /> Demo sessions
+                  </span>
+                </div>
+                {/* prepared paths, on the server, loadable from any browser */}
+                <div className="max-h-[168px] overflow-y-auto px-2 pb-1 [scrollbar-width:thin]" data-stage-demos>
+                  {demos.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => {
+                        callController.end("user_hangup");
+                        loadDemoSession(d.id);
+                        setOpen(false);
+                      }}
+                      disabled={d.id === sessionId}
+                      className="flex h-[52px] w-full items-center justify-between gap-2 rounded-lg px-2 text-left hover:bg-ink/5 disabled:opacity-50 disabled:hover:bg-transparent"
+                      data-stage-demo={d.id}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-[13px]">
+                          <span className="rounded-[4px] bg-ink px-1 py-px font-mono text-[9px] font-bold uppercase tracking-wider text-panel">demo</span>
+                          <span className="truncate">{demoLabel(d)}</span>
+                        </div>
+                        <div className="font-mono text-[11px] text-ink/45">
+                          {d.id.slice(0, 8)} · {d.messages} msgs · {d.gmail_status === "connected" ? "gmail" : d.phase}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-imsg-blue">{d.id === sessionId ? "Loaded" : "Load"}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="flex items-center justify-between border-t border-line px-4 pt-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40">
               <span className="flex items-center gap-1.5">

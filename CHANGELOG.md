@@ -660,3 +660,16 @@ three-bubble plan.
 - Shorter: the decline hint asks for at most two bubbles and one question, not "the steps, what you need from them,
   the first thing you do now". `channel_text.md`: one to three bubbles, one is often right; once you have asked, stop
   and wait; never restate a plan you already gave. `PROMPT_VERSION 2026-09-27.3`.
+
+
+## 22. DEMO sessions (fourteenth commit, 2026-09-27)
+
+- Prepared sessions can be pinned as DEMO: `data/demo_sessions.json` names the ids (and optional labels),
+  `GET /api/sessions/demo` enriches them from their rows (name, need, phase, Gmail, message count) and drops ids that
+  no longer exist. The stage menu shows them above the local runs with a DEMO tag and a Load button; the `/db`
+  dropdown has a DEMO group that loads one into the phone. Loading archives the current run locally (as Restart
+  does) and points the phone at the demo's session id; the brain rejoins it on the server. Because the rows are the
+  server's, any browser can load them. Two are pinned today: Bill with the CS145 assignment and Gmail connected (main
+  mode), and Bill early in onboarding.
+- Loading a demo puts you *in* that session: anything you send from there continues it on the server. Restart to
+  leave it untouched next time, or pin a fresh id.

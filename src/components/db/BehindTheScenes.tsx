@@ -4,6 +4,7 @@ import { ArrowUpRight, ChevronDown, History, Pencil, PhoneIncoming, PhoneOff, Se
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { callController } from "@/lib/call/controller";
+import { demoLabel, loadDemoSession, useDemoSessions } from "@/lib/session/demos";
 import { restartSimulation, restoreRun, useRunsStore, type RunSnapshot } from "@/lib/session/runs";
 import { SESSION_STORAGE_KEY, useSessionStore } from "@/lib/session/store";
 import { SLOT_LABELS, SLOT_ORDER, callLogLabel, messageText, type ChatMessage, type SessionEvent, type SlotKey, type SlotStatus } from "@/lib/session/types";
@@ -79,6 +80,9 @@ const runLabel = (r: RunSnapshot) => `${r.slots.user_name.value ?? "Anonymous"} 
 
 function TopBar({ runs, viewId, onView }: { runs: RunSnapshot[]; viewId: string | null; onView: (id: string | null) => void }) {
   const connection = useSessionStore((st) => st.connection);
+  const demos = useDemoSessions();
+  const liveId = useSessionStore((st) => st.sessionId);
+  const isDemoLive = demos.some((d) => d.id === liveId);
   const liveName = useSessionStore((st) => st.slots.user_name.value);
   const liveCount = useSessionStore((st) => st.messages.length);
   return (
@@ -94,12 +98,31 @@ function TopBar({ runs, viewId, onView }: { runs: RunSnapshot[]; viewId: string 
             <History className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-black/45" />
             <select
               value={viewId ?? "live"}
-              onChange={(e) => onView(e.target.value === "live" ? null : e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "live") return onView(null);
+                if (v.startsWith("demo:")) {
+                  // a DEMO session lives on the server: load it into the phone (and this page follows, live)
+                  loadDemoSession(v.slice(5));
+                  return onView(null);
+                }
+                onView(v);
+              }}
               aria-label="Which run to show"
               data-db-run-select
               className="h-8 appearance-none rounded-lg border border-black/10 bg-white pl-8 pr-7 text-[13px] text-black/80 outline-none hover:border-black/20 focus:border-black/40"
             >
-              <option value="live">Live · {liveName ?? "Anonymous"} · {liveCount} msgs</option>
+              <option value="live">
+                Live{isDemoLive ? " (DEMO)" : ""} · {liveName ?? "Anonymous"} · {liveCount} msgs
+              </option>
+              {demos.filter((d) => d.id !== liveId).length > 0 && <option disabled>── DEMO sessions (load into the phone) ──</option>}
+              {demos
+                .filter((d) => d.id !== liveId)
+                .map((d) => (
+                  <option key={d.id} value={`demo:${d.id}`}>
+                    DEMO · {demoLabel(d)}
+                  </option>
+                ))}
               {runs.length > 0 && <option disabled>── previous runs ──</option>}
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>

@@ -1,0 +1,7 @@
+{
+  "_note": "Prepared sessions pinned as DEMO in the stage menu and on /db, loadable from any browser. The rows live in Supabase; this file only says which ids are demos. Labels are optional; the route fills in name, need and counts from the session.",
+  "sessions": [
+    { "id": "d2ee99c0-5695-46c5-a75f-e29c6e691a20", "label": "Bill · CS145 assignment · Gmail connected · main mode" },
+    { "id": "c263223d-121e-4604-a567-cfe50a8cbe70", "label": "Bill · early onboarding, still collecting" }
+  ]
+}

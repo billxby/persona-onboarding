@@ -318,6 +318,21 @@ export interface LatencyStats {
   n: number;
 }
 
+/** A prepared session pinned as DEMO (data/demo_sessions.json), as GET /api/sessions/demo returns it. */
+export interface DemoSession {
+  id: string;
+  label: string | null;
+  user_name: string | null;
+  agent_name: string | null;
+  need: string | null;
+  phase: ServerPhase;
+  mode: Mode;
+  gmail_status: GmailStatus;
+  /** text bubbles in the thread */
+  messages: number;
+  created_at: string;
+}
+
 export interface SessionView {
   session: SessionRow;
   messages: MessageRow[];
