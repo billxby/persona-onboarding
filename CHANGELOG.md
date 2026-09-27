@@ -576,6 +576,32 @@ as it has barely finished speaking.
   run (`03ee4c4b`) ended on silence at 45.5 s and the thread got the call-log bubble and the `silence_end` reply.
 - Docs: DESIGN §8.9 and §10.6, README "Voice".
 
+## 22. Captions in spoken order; one reply per batch of tool calls (fourteenth commit, 2026-09-27)
+
+Reported: the reply's caption appeared above the user's line it answered, and the bot asked the same question twice
+("Saved: you're Bill, and I'm Persona. So, what's one concrete thing…" then "What's the one concrete thing you want
+handled this week, like…").
+
+- **Order.** The user's caption was only created when the transcription came back, which is often after the reply
+  has started (the model answers the audio directly; transcription is a separate, slower pass). The caption now opens
+  as a placeholder the moment `input_audio_buffer.speech_started` arrives, is tied to its item at
+  `input_audio_buffer.committed`, and is filled in by the transcript; an empty or failed transcription removes it
+  (`removeCaption` in the store, `onCaptionRemove` on the transport handlers). Typed dev input is unchanged.
+- **Double ask.** The agents SDK starts a response after every tool output (`sendFunctionCallOutput(…, startResponse
+  = true)`), so a turn in which the model called `set_slot` twice (name, agent name) got two spoken replies on top of
+  the narration that carried the calls; the second re-asked the first's question in longer words. `ToolBatch` (new,
+  `src/lib/voice/toolBatch.ts`): every tool result is returned as a background result, and one `response.create` is
+  sent when the batch (counted from `response.output_item.done` / `response.done`) has fully returned; none when a
+  tool is hanging up or the user spoke while the tools ran (server VAD answers that). The residual verbosity is the
+  model echoing its rules ("I'll repeat it back to make sure I heard you right"), which the prompt already forbids.
+- **Tests:** `tests/unit/toolBatch.test.ts` (8). **Live check** (a caller who says "My name is Bill, and I'll call you
+  Persona." from a WAV with silence around it): before (session `15e785d8`), the user's line was followed by three
+  replies (the narration that carried the calls, the ask, the ask again in longer words). After (`50bb6aa6`): the
+  user's caption opened at 13.7 s when the speech started and was filled at 17.3 s, sitting above the reply; two
+  `set_slot` calls returned at 17.0 s and 17.1 s, one response followed (latency event 18.3 s), one line: "Nice to
+  meet you, Bill, and I'm Persona. What's one concrete thing I can take off your plate this week?"; the tier-1
+  check-in came 6 s after it ended.
+
 
 ## 21. Room to answer (thirteenth commit, 2026-09-27)
 

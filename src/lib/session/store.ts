@@ -96,6 +96,7 @@ export interface SessionState {
 
   addCaption: (line: Omit<CaptionLine, "id" | "ts"> & Partial<Pick<CaptionLine, "id" | "ts">>) => CaptionLine;
   updateCaption: (id: string, patch: Partial<CaptionLine>) => void;
+  removeCaption: (id: string) => void;
   clearCaptions: () => void;
 
   logEvent: (type: string, payload?: Record<string, unknown>) => void;
@@ -313,6 +314,7 @@ export const useSessionStore = create<SessionState>()(
       },
       updateCaption: (id, patch) =>
         set((s) => ({ captions: s.captions.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
+      removeCaption: (id) => set((s) => ({ captions: s.captions.filter((c) => c.id !== id) })),
       clearCaptions: () => set({ captions: [] }),
 
       logEvent: (type, payload) =>

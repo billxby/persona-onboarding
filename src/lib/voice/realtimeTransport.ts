@@ -16,6 +16,7 @@ import { uid } from "@/lib/utils";
 import { CaptionPacer } from "./captionPacer";
 import { CallEnder } from "./ending";
 import { SilenceWatcher } from "./silence";
+import { ToolBatch } from "./toolBatch";
 import type { VoiceTransport, VoiceTransportHandlers } from "./types";
 
 /** Function tool definition as minted by /api/realtime/token (strict JSON schema). */
@@ -31,7 +32,16 @@ type TokenResponse = RealtimeTokenResponse & {
   turn_detection?: { silence_duration_ms: number; prefix_padding_ms: number };
 };
 
-type RawEvent = { type: string; item_id?: string; delta?: string; transcript?: string; response_id?: string; error?: unknown };
+type RawEvent = {
+  type: string;
+  item_id?: string;
+  delta?: string;
+  transcript?: string;
+  response_id?: string;
+  error?: unknown;
+  item?: { type?: string };
+  response?: { id?: string; output?: Array<{ type?: string }> };
+};
 
 const HEARTBEAT_MS = 5_000;
 /** the assistant said goodbye in words: end the call unless end_call lands within this (DESIGN §8.9) */
@@ -86,6 +96,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   private readonly silence: SilenceWatcher;
   private readonly pacer: CaptionPacer;
   private readonly ender: CallEnder;
+  /** one spoken reply per batch of tool calls, not one per tool */
+  private readonly tools = new ToolBatch(() => this.sendEvent({ type: "response.create" }));
 
   private alive = false;
   private ending = false;
@@ -107,6 +119,8 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
   /** Realtime item id → caption id */
   private captionIds = new Map<string, string>();
   private assistantText = new Map<string, string>();
+  /** user captions opened at speech start, waiting for their Realtime item id (FIFO) */
+  private pendingUserCaptions: string[] = [];
   private readonly onPageHide = () => {
     if (!this.alive || this.ending) return;
     const body: CallEventRequest = { session_id: this.sessionId, type: "call_dropped" };
@@ -263,29 +277,32 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
         description: def.description,
         parameters: def.parameters,
         execute: async (input: unknown) => {
-          const result = await this.runTool(def.name, input);
-          // end_call: don't trigger another response; we hang up once the current audio finishes
-          return def.name === "end_call" ? backgroundResult(result) : result;
+          const batch = this.tools.current;
+          const { result, endCall } = await this.runTool(def.name, input);
+          this.tools.returned(batch, { hangUp: endCall });
+          // never a response per tool: the batch continues the turn once every call is back (not when hanging up)
+          return backgroundResult(result);
         },
       }),
     );
   }
 
-  private async runTool(name: string, input: unknown): Promise<ToolResult | { ok: false; error: string }> {
+  private async runTool(name: string, input: unknown): Promise<{ result: ToolResult | { ok: false; error: string }; endCall: boolean }> {
     let res: ToolRouteResponse;
     try {
       res = await postJson<ToolRouteResponse>(`/api/tools/${encodeURIComponent(name)}`, { session_id: this.sessionId, input });
     } catch (e) {
       console.warn("[realtime] tool failed", name, e);
-      return { ok: false, error: `${name} is unavailable right now` };
+      return { result: { ok: false, error: `${name} is unavailable right now` }, endCall: false };
     }
-    if (!this.alive) return res.result;
+    const endCall = !!res.end_call;
+    if (!this.alive) return { result: res.result, endCall };
     if (res.instructions) this.applyInstructions(res.instructions);
     const gmail = res.result?.state?.gmail;
     if (gmail) this.silence.setGmailPending(gmail === "pending");
     // the goodbye is usually still playing (or about to start) when the tool call lands
-    if (res.end_call) this.requestEnd("bot_hangup", END_CALL_AWAIT_AUDIO_MS);
-    return res.result;
+    if (endCall) this.requestEnd("bot_hangup", END_CALL_AWAIT_AUDIO_MS);
+    return { result: res.result, endCall };
   }
 
   private applyInstructions(instructions: string) {
@@ -315,19 +332,33 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
         if (e.item_id) this.finishAssistant(e.item_id, e.transcript);
         break;
       case "conversation.item.input_audio_transcription.completed":
-        if (e.item_id && e.transcript?.trim()) this.userFinal(e.item_id, e.transcript.trim());
+        if (e.item_id) this.userFinal(e.item_id, (e.transcript ?? "").trim());
+        break;
+      case "conversation.item.input_audio_transcription.failed":
+        if (e.item_id) this.dropUserCaption(e.item_id);
         break;
       case "input_audio_buffer.speech_started":
         this.userSpeaking = true;
         this.speechStoppedAt = null;
         this.silence.onUserSpeechStart();
+        this.tools.userSpoke();
         // whatever sounded like a goodbye, the user is talking: it wasn't one
         this.clearGoodbyeTimer();
+        this.openUserCaption();
         this.handlers?.onUserSpeechStart?.();
+        break;
+      case "response.output_item.done":
+        if (e.item?.type === "function_call") this.tools.announce();
+        break;
+      case "response.done":
+        this.tools.close((e.response?.output ?? []).filter((i) => i.type === "function_call").length);
         break;
       case "input_audio_buffer.speech_stopped":
         this.userSpeaking = false;
         this.speechStoppedAt = performance.now();
+        break;
+      case "input_audio_buffer.committed":
+        if (e.item_id) this.bindUserCaption(e.item_id);
         break;
       case "output_audio_buffer.started":
         this.onAudioStarted();
@@ -429,12 +460,51 @@ export class RealtimeWebRTCTransport implements VoiceTransport {
     this.handlers?.onCaptionUpdate(id, { text, final });
   }
 
-  private userFinal(itemId: string, text: string) {
+  /**
+   * The user started talking: open their caption now, so it sits before the reply it gets. The
+   * transcript arrives later, often after the reply has started, and fills it in.
+   */
+  private openUserCaption() {
+    if (this.pendingUserCaptions.length) return; // a false start that was never committed: reuse it
     const id = uid();
-    this.captionIds.set(itemId, id);
-    // create, then finalise: the call controller forwards final user captions to the brain on update
-    this.handlers?.onCaption({ id, speaker: "user", text, final: false, ts: Date.now() });
-    this.handlers?.onCaptionUpdate(id, { text, final: true });
+    this.pendingUserCaptions.push(id);
+    this.handlers?.onCaption({ id, speaker: "user", text: "", final: false, ts: Date.now() });
+  }
+
+  /** The server committed the user's audio as an item: tie the open caption to that item id. */
+  private bindUserCaption(itemId: string) {
+    if (this.captionIds.has(itemId)) return;
+    const id = this.pendingUserCaptions.shift();
+    if (id) this.captionIds.set(itemId, id);
+  }
+
+  /** Transcription failed: the open caption never becomes a line. */
+  private dropUserCaption(itemId: string) {
+    const id = this.captionIds.get(itemId) ?? this.pendingUserCaptions.shift();
+    if (id) this.handlers?.onCaptionRemove?.(id);
+    this.captionIds.delete(itemId);
+  }
+
+  /** A user line is final: fill the caption opened at speech start (spoken), or add a fresh one (typed). */
+  private userFinal(itemId: string, text: string, opts: { spoken?: boolean } = {}) {
+    let id = this.captionIds.get(itemId) ?? (opts.spoken ? this.pendingUserCaptions.shift() : undefined);
+    if (!text) {
+      // nothing intelligible (a cough, noise): no line
+      if (id) this.handlers?.onCaptionRemove?.(id);
+      this.captionIds.delete(itemId);
+      return;
+    }
+    if (id) {
+      this.captionIds.set(itemId, id);
+      // the call controller forwards final user captions to the brain on update
+      this.handlers?.onCaptionUpdate(id, { text, final: true });
+    } else {
+      id = uid();
+      this.captionIds.set(itemId, id);
+      // create, then finalise, for the same reason
+      this.handlers?.onCaption({ id, speaker: "user", text, final: false, ts: Date.now() });
+      this.handlers?.onCaptionUpdate(id, { text, final: true });
+    }
     this.silence.onUserSpeechStart();
     void this.postTranscript([{ item_id: itemId, role: "user", text, final: true }]);
   }

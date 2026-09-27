@@ -11,6 +11,8 @@ export interface VoiceTransportHandlers {
   onDisconnected(reason?: string): void;
   onCaption(line: CaptionLine): void;
   onCaptionUpdate(id: string, patch: Partial<CaptionLine>): void;
+  /** a caption opened when the user started talking that never became a line (nothing intelligible) */
+  onCaptionRemove?(id: string): void;
   /** 0..1 loudness of the remote (assistant) audio, for the speaking meter */
   onRemoteLevel(level: number): void;
   /** user-stop → first-assistant-audio latency for one turn, in ms */

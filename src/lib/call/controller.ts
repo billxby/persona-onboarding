@@ -76,6 +76,7 @@ export const callController = {
         }
       },
       onCaption: (line) => session.get().addCaption(line),
+      onCaptionRemove: (id) => session.get().removeCaption(id),
       onCaptionUpdate: (id, patch) => {
         session.get().updateCaption(id, patch);
         if (patch.final) {
